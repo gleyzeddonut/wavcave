@@ -53,8 +53,8 @@ def choose_folder():
     return None
 
 
-def scan(root):
-    out, base = [], os.path.basename(os.path.normpath(root))
+def _scan_iter(root):
+    base = os.path.basename(os.path.normpath(root))
     for dp, _dn, fns in os.walk(root):
         for fn in fns:
             ext = os.path.splitext(fn)[1].lower()
@@ -69,7 +69,7 @@ def scan(root):
                 st = os.stat(full)
             except OSError:
                 continue
-            out.append({
+            yield {
                 "name": fn,
                 "rel": base + "/" + rel.replace(os.sep, "/"),
                 "abs": full,
@@ -77,8 +77,11 @@ def scan(root):
                 "size": st.st_size,
                 "mtime": int(st.st_mtime * 1000),
                 "online": is_online_only(st),
-            })
-    return out
+            }
+
+
+def scan(root):
+    return list(_scan_iter(root))
 
 
 # --- on-disk scan cache (so launch can show the last scan without re-walking) ---
@@ -233,6 +236,35 @@ class H(BaseHTTPRequestHandler):
                 return self._json({"root": root, "items": items})
             except Exception as e:
                 return self._json({"error": str(e)}, 500)
+        if p == "/api/scan_stream":
+            # NDJSON stream: one {"item":…} line per file as it's discovered,
+            # then a final {"done":true,…}. Lets the UI tick the count per file.
+            root = (q.get("path") or [""])[0]
+            if not root or not os.path.isdir(root):
+                return self._json({"error": "Folder not found"}, 400)
+            ALLOWED.add(os.path.realpath(root))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            items = []
+            try:
+                for it in _scan_iter(root):
+                    items.append(it)
+                    self.wfile.write((json.dumps({"item": it}) + "\n").encode())
+                    self.wfile.flush()
+                write_cache(root, items)
+                self.wfile.write((json.dumps({"done": True, "root": root, "count": len(items)}) + "\n").encode())
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            except Exception as e:
+                try:
+                    self.wfile.write((json.dumps({"error": str(e)}) + "\n").encode())
+                    self.wfile.flush()
+                except Exception:
+                    pass
+            return
         if p == "/api/cached":
             root = (q.get("path") or [""])[0]
             if not root:

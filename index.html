@@ -987,15 +987,37 @@
     else { $("toolbar").style.display="none"; $("mainRow").style.display="none"; $("landing").style.display="none"; loader.hidden=false; status(""); }
     BounceScan.mount(loader).reset();
     const byAbs=new Map();
+    let _raf=0;
+    const tickCount=()=>{ if(!_raf) _raf=requestAnimationFrame(()=>{ _raf=0; BounceScan.setCount(byAbs.size); }); };
+    const addItem=(it)=>{ if(!byAbs.has(it.abs)){ byAbs.set(it.abs,{ name:it.name, path:it.rel, abs:it.abs, ext:it.ext, size:it.size, mtime:it.mtime, online:!!it.online }); tickCount(); } };
     for (const root of roots){
       BounceScan.setPath(root);
       try{
-        const r=await fetch("/api/scan?path="+encodeURIComponent(root)); const j=await r.json();
-        if (j.error){ status("Error scanning "+root+": "+j.error); continue; }
-        for (const it of j.items) if(!byAbs.has(it.abs)) byAbs.set(it.abs,{ name:it.name, path:it.rel, abs:it.abs, ext:it.ext, size:it.size, mtime:it.mtime, online:!!it.online });
+        const r=await fetch("/api/scan_stream?path="+encodeURIComponent(root));
+        if (r.body && r.body.getReader){
+          const reader=r.body.getReader(); const dec=new TextDecoder(); let buf="";
+          for(;;){
+            const {value,done}=await reader.read(); if(done) break;
+            buf+=dec.decode(value,{stream:true});
+            let nl;
+            while((nl=buf.indexOf("\n"))>=0){
+              const line=buf.slice(0,nl); buf=buf.slice(nl+1);
+              if(!line) continue;
+              let m; try{ m=JSON.parse(line); }catch(e){ continue; }
+              if(m.item) addItem(m.item);
+              else if(m.error) status("Error scanning "+root+": "+m.error);
+            }
+          }
+        } else {
+          const j=await (await fetch("/api/scan?path="+encodeURIComponent(root))).json();
+          if (j.error){ status("Error scanning "+root+": "+j.error); continue; }
+          (j.items||[]).forEach(addItem);
+        }
         BounceScan.setCount(byAbs.size);
       } catch(e){ status("Scan failed: "+e.message); }
     }
+    if (_raf) cancelAnimationFrame(_raf);
+    BounceScan.setCount(byAbs.size);
     loader.hidden=true;
     finish([...byAbs.values()]);
   }
