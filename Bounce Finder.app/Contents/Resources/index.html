@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>WavCave</title>
+<title>Bounce Finder</title>
 <style>
   :root{
     --paper:#ece2cf; --paper-2:#f5eddc; --card:#f7f1e3; --inset:#e4d8bf;
@@ -638,7 +638,7 @@
     <div class="brand">
       <div class="reel" id="reel"><span class="sf sf-wave"></span></div>
       <div style="min-width:0;">
-        <div class="name">WavCave</div>
+        <div class="name">Bounce Finder</div>
         <div class="tag mono">every bounced .wav / .mp3, in one place</div>
       </div>
     </div>
@@ -709,7 +709,7 @@
   <div id="setup" hidden>
     <div class="setup-card">
       <h2>What are your bounce folders called?</h2>
-      <p class="sub">WavCave surfaces every <code>.wav</code> / <code>.mp3</code> that lives inside a folder with one of these names, no matter how deep it&rsquo;s buried. Add the folder name you bounce into &mdash; you can change these anytime in Settings.</p>
+      <p class="sub">Bounce Finder surfaces every <code>.wav</code> / <code>.mp3</code> that lives inside a folder with one of these names, no matter how deep it&rsquo;s buried. Add the folder name you bounce into &mdash; you can change these anytime in Settings.</p>
       <div class="kw-list" id="setupKw"></div>
       <button class="btn primary big setup-go" id="setupGo">Continue</button>
     </div>
@@ -740,7 +740,7 @@
     <div class="deck">
       <div class="reel"><span class="sf sf-wave"></span></div>
       <h2>Every song you&rsquo;ve ever made</h2>
-      <p>Point WavCave at one or more folders and it surfaces every <code>.wav</code> and <code>.mp3</code> sitting inside a <code>bounces</code> folder &mdash; no matter how deep it&rsquo;s buried. Everything stays on your machine.</p>
+      <p>Point Bounce Finder at one or more folders and it surfaces every <code>.wav</code> and <code>.mp3</code> sitting inside a <code>bounces</code> folder &mdash; no matter how deep it&rsquo;s buried. Everything stays on your machine.</p>
       <button class="btn primary big" id="pickBtn2"><span class="sf sf-folderplus"></span>Add a folder to search</button>
       <div class="fine">nothing is uploaded &middot; works fully offline</div>
     </div>
@@ -1627,7 +1627,7 @@
 
   /* ---- in-app updates (driven by the native app via gh) ---- */
   function bfSend(o){ try{ window.webkit.messageHandlers.bf.postMessage(o); }catch(e){} }
-  window.bfUpdate = (ver,notes)=>{ const b=$("updateBar"); if(!b) return; b.dataset.ver=ver; b.dataset.mode=""; $("updateMsg").innerHTML="WavCave <b>"+esc(String(ver))+"</b> is available."; const btn=$("updateBtn"); btn.textContent="Update"; btn.disabled=false; $("updateLater").style.display=""; b.classList.add("show"); };
+  window.bfUpdate = (ver,notes)=>{ const b=$("updateBar"); if(!b) return; b.dataset.ver=ver; b.dataset.mode=""; $("updateMsg").innerHTML="Bounce Finder <b>"+esc(String(ver))+"</b> is available."; const btn=$("updateBtn"); btn.textContent="Update"; btn.disabled=false; $("updateLater").style.display=""; b.classList.add("show"); };
   window.bfUpdateReady = ()=>{ const b=$("updateBar"); $("updateMsg").innerHTML="Update downloaded \u2014 restart to finish."; b.dataset.mode="restart"; const btn=$("updateBtn"); btn.textContent="Restart"; btn.disabled=false; $("updateLater").style.display="none"; b.classList.add("show"); };
   window.bfUpdateError = ()=>{ const b=$("updateBar"); $("updateMsg").textContent="Update failed \u2014 try again later."; b.dataset.mode=""; const btn=$("updateBtn"); btn.textContent="Retry"; btn.disabled=false; };
   window.bfUpdateNone = (uptodate)=>{ status(uptodate?"You\u2019re on the latest version.":"Couldn\u2019t check for updates right now."); };

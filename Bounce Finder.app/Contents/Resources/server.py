@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WavCave backend: scans for bounce audio, streams it, reveals it in Finder."""
+"""Bounce Finder backend: scans for bounce audio, streams it, reveals it in Finder."""
 import os, json, subprocess, urllib.parse, mimetypes, re, threading, queue, wave, array, tempfile, math
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -48,16 +48,7 @@ def _seg_matcher(kws):
         return seg in cs_set or seg.lower() in ci_set
     return match
 # All persisted data lives here (overridable so tests never touch the real library).
-DATA_DIR = os.environ.get("BF_DATA_DIR", os.path.expanduser("~/Library/Application Support/WavCave"))
-# One-time migration from the old "Bounce Finder" brand: carry the existing library,
-# settings, scan cache and waveform peaks over so nothing is lost after the rename.
-_old_data = os.path.expanduser("~/Library/Application Support/BounceFinder")
-if DATA_DIR == os.path.expanduser("~/Library/Application Support/WavCave") \
-        and not os.path.exists(DATA_DIR) and os.path.isdir(_old_data):
-    try:
-        os.rename(_old_data, DATA_DIR)
-    except Exception:
-        pass
+DATA_DIR = os.environ.get("BF_DATA_DIR", os.path.expanduser("~/Library/Application Support/BounceFinder"))
 
 
 def is_online_only(st):

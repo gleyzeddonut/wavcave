@@ -2,6 +2,6 @@
 __pycache__/
 *.pyc
 # build artifacts
-Bounce Finder.app/
-native/BounceFinder
+WavCave.app/
+native/WavCave
 native/*.o
