@@ -501,6 +501,14 @@
   #mainRow{ flex:1; display:flex; min-height:0; }
   #sidebar{ width:228px; flex-shrink:0; overflow-y:auto; border-right:1px solid var(--line); padding:12px 10px 26px; background:rgba(245,237,220,.35); }
   .sb-sec{ font-family:var(--sans); font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3); padding:0 8px; margin:15px 0 5px; }
+  .sb-sec-row{ display:flex; align-items:center; justify-content:space-between; }
+  .sb-add{ display:grid; place-items:center; width:18px; height:18px; border-radius:5px; border:none; background:transparent; color:var(--ink-3); cursor:pointer; }
+  .sb-add:hover{ background:var(--inset); color:#0a84ff; }
+  .sb-add .sf{ width:11px; height:11px; }
+  .sb-empty{ font-size:11.5px; color:var(--ink-3); padding:2px 9px 4px; line-height:1.4; }
+  .sb-newrow{ padding:1px 6px 3px; }
+  .sb-newinput{ width:100%; font-family:var(--sans); font-size:13px; color:var(--ink); background:var(--inset); border:1px solid #0a84ff; border-radius:7px; padding:5px 9px; outline:none; }
+  .sb-folder.sb-drop{ background:rgba(10,132,255,.16); box-shadow:0 0 0 1.5px #0a84ff inset; }
   .sb-sec:first-child{ margin-top:2px; }
   .sb-item{ display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:8px; cursor:pointer; font-size:13px; color:var(--ink); user-select:none; }
   .sb-item:hover{ background:var(--inset); }
@@ -1275,7 +1283,7 @@
         });
         li.addEventListener("contextmenu",e=>{ e.preventDefault(); showCtx(e.clientX,e.clientY,playOrder[+li.dataset.i]); });
         li.addEventListener("mouseenter",()=>prefetch(playOrder[+li.dataset.i]));
-        li.addEventListener("dragstart",(e)=>{ const rec=playOrder[+li.dataset.i]; if(!rec||DEMO){ e.preventDefault(); return; } e.dataTransfer.setData("DownloadURL", dlUrl(rec)); e.dataTransfer.effectAllowed="copy"; });
+        li.addEventListener("dragstart",(e)=>{ const rec=playOrder[+li.dataset.i]; if(!rec){ e.preventDefault(); return; } const k=li.dataset.key; const keys=(selected.size>1 && selected.has(k))?[...selected]:(k?[k]:[]); e.dataTransfer.setData("application/x-wavcave-keys", JSON.stringify(keys)); if(!DEMO) e.dataTransfer.setData("DownloadURL", dlUrl(rec)); e.dataTransfer.effectAllowed="copy"; });
       });
     }
     $("transport").style.display="flex";
@@ -1375,7 +1383,7 @@
     html+=`<div class="ctx-item" data-act="compare">\u21C4 ${(cmpPending&&cmpPending.abs!==rec.abs)?("Compare with \u201c"+esc(cmpPending.name)+"\u201d"):"Compare A/B\u2026"}</div>`;
     { const _ks=groupKey(rec.name); const _cn=collections.filter(c=>c.keys.includes(_ks)).map(c=>c.name); const _tg=songTags.get(_ks)||[]; const _sub=[..._cn,..._tg].slice(0,3).join(", ");
     html+=`<div class="ctx-item" data-act="details">ⓘ Song details\u2026</div>`;
-      html+=`<div class="ctx-item" data-act="collection">➕ Add to collection / tag…${_sub?`<span class="ctx-sub">in: ${esc(_sub)}</span>`:""}</div>`; }
+      html+=`<div class="ctx-item" data-act="collection">➕ Add to folder / tag…${_sub?`<span class="ctx-sub">in: ${esc(_sub)}</span>`:""}</div>`; }
     html+=`<div class="ctx-item" data-act="removefile">\u2716 Remove this file from the list<span class="ctx-sub">${esc(rec.name)}</span></div>`;
     ctx.innerHTML=html;
     ctx.querySelectorAll("[data-path]").forEach(el=>el.onclick=()=>{ folderIgnores.add(el.dataset.path); saveFolderIgnores(); hideCtx(); renderFolderTree(); applyFilters(); status(`Ignoring folder \u201c${el.dataset.path.split("/").pop()}\u201d.`); });
@@ -1720,6 +1728,7 @@
   /* ---------- browse sidebar + play history ---------- */
   let nav={kind:"all"};
   const openCtx=new Set();
+  let newFolderOpen=false, renameId=null;
   let playHistory=[];
   const loadHistory=()=>{ try{ const a=JSON.parse(localStorage.getItem("bf_history")||"[]"); if(Array.isArray(a)) playHistory=a; }catch(e){} };
   const saveHistory=()=>{ try{ localStorage.setItem("bf_history", JSON.stringify(playHistory.slice(0,80))); }catch(e){} };
@@ -1738,10 +1747,13 @@
     h+=sbItem(nav.kind==="all"&&!activeCollection,"sf-wave","All songs",groups.length,'data-nav="all"');
     h+=sbItem(nav.kind==="starred","sf-starfill","Starred",starCount,'data-nav="starred"');
     h+=sbItem(nav.kind==="recent","sf-rescan","Recently played",recentCount,'data-nav="recent"');
-    if(collections.length){
-      h+=`<div class="sb-sec">Collections</div>`;
-      for(const c of collections) h+=sbItem(!!activeCollection&&activeCollection===c.id,"sf-folder",c.name,c.keys.length,`data-coll="${esc(c.id)}"`);
+    h+=`<div class="sb-sec sb-sec-row"><span>Folders</span><button class="sb-add" id="sbNewFolder" title="New folder"><span class="sf sf-plus"></span></button></div>`;
+    if(newFolderOpen) h+=`<div class="sb-newrow"><input id="sbNewInput" class="sb-newinput" type="text" placeholder="Folder name…" spellcheck="false" autocomplete="off"></div>`;
+    for(const c of collections){
+      if(renameId===c.id){ h+=`<div class="sb-newrow"><input id="sbRenameInput" class="sb-newinput" type="text" value="${esc(c.name)}" data-id="${esc(c.id)}" spellcheck="false" autocomplete="off"></div>`; continue; }
+      h+=`<div class="sb-item sb-folder${(!!activeCollection&&activeCollection===c.id)?" active":""}" data-coll="${esc(c.id)}" title="Right-click to rename or delete · drag songs here to add"><span class="sf sf-folder"></span><span class="sb-lbl">${esc(c.name)}</span><span class="sb-ct">${c.keys.length}</span></div>`;
     }
+    if(!collections.length && !newFolderOpen) h+=`<div class="sb-empty">Click + or drag a song here to make one.</div>`;
     const ctxMap=new Map();
     for(const g of groups){ const cx=contextLabel(g.head); if(!ctxMap.has(cx)) ctxMap.set(cx,[]); ctxMap.get(cx).push(g); }
     const ctxs=[...ctxMap.keys()].sort((a,b)=>a.localeCompare(b));
@@ -1760,7 +1772,23 @@
     }
     body.innerHTML=h;
     body.querySelectorAll("[data-nav]").forEach(el=>el.onclick=()=>sbNav(el.dataset.nav));
-    body.querySelectorAll("[data-coll]").forEach(el=>el.onclick=()=>sbColl(el.dataset.coll));
+    { const nb=$("sbNewFolder"); if(nb) nb.onclick=(e)=>{ e.stopPropagation(); renameId=null; newFolderOpen=!newFolderOpen; renderSidebar(); const inp=$("sbNewInput"); if(inp) inp.focus(); }; }
+    { const inp=$("sbNewInput"); if(inp){
+        inp.onkeydown=(e)=>{ if(e.key==="Enter"){ const nm=inp.value.trim(); newFolderOpen=false; if(nm){ const id=newFolder(nm); activeCollection=id; nav={kind:"all"}; const cs=$("collSel"); if(cs) cs.value=id; buildCollSel(); render(); } else renderSidebar(); } else if(e.key==="Escape"){ newFolderOpen=false; renderSidebar(); } };
+        inp.onblur=()=>{ if(newFolderOpen){ const nm=inp.value.trim(); newFolderOpen=false; if(nm){ newFolder(nm); buildCollSel(); } renderSidebar(); } };
+    } }
+    { const inp=$("sbRenameInput"); if(inp){
+        const commit=()=>{ const c=collById(inp.dataset.id); const nm=inp.value.trim(); if(c&&nm){ c.name=nm; saveCollections(); buildCollSel(); } renameId=null; render(); };
+        inp.onkeydown=(e)=>{ if(e.key==="Enter") commit(); else if(e.key==="Escape"){ renameId=null; renderSidebar(); } };
+        inp.onblur=commit; inp.focus(); inp.select();
+    } }
+    body.querySelectorAll(".sb-folder").forEach(el=>{
+      el.onclick=()=>sbColl(el.dataset.coll);
+      el.addEventListener("contextmenu",e=>{ e.preventDefault(); e.stopPropagation(); folderMenu(e.clientX,e.clientY,el.dataset.coll); });
+      el.addEventListener("dragover",e=>{ if([...e.dataTransfer.types].includes("application/x-wavcave-keys")){ e.preventDefault(); el.classList.add("sb-drop"); } });
+      el.addEventListener("dragleave",()=>el.classList.remove("sb-drop"));
+      el.addEventListener("drop",e=>{ e.preventDefault(); el.classList.remove("sb-drop"); let keys=[]; try{ keys=JSON.parse(e.dataTransfer.getData("application/x-wavcave-keys")||"[]"); }catch(_){} const c=collById(el.dataset.coll); const n=addKeysToCollection(el.dataset.coll,keys); if(n){ buildCollSel(); renderSidebar(); status("Added "+n+" song"+(n>1?"s":"")+" to “"+(c?c.name:"folder")+"”."); } });
+    });
     body.querySelectorAll(".sb-tw").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); const cx=el.dataset.tw; openCtx.has(cx)?openCtx.delete(cx):openCtx.add(cx); renderSidebar(); });
     body.querySelectorAll(".sb-ctx").forEach(el=>el.onclick=()=>sbNav("context",el.dataset.ctx));
     body.querySelectorAll(".sb-art").forEach(el=>el.onclick=()=>sbArt(el.dataset.art,el.dataset.actx));
@@ -1769,6 +1797,19 @@
   function sbNav(kind,value){ nav=value!=null?{kind:kind,value:value}:{kind:kind}; activeCollection=null; const cs=$("collSel"); if(cs) cs.value=""; render(); }
   function sbArt(a,cx){ nav={kind:"artist",value:a,ctx:cx}; activeCollection=null; const cs=$("collSel"); if(cs) cs.value=""; render(); }
   function sbColl(id){ activeCollection=id; nav={kind:"all"}; const cs=$("collSel"); if(cs) cs.value=id; render(); }
+  function newFolder(name){ return newCollection(name); }
+  function addKeysToCollection(id,keys){ const c=collById(id); if(!c) return 0; let n=0; for(const k of keys){ if(k && c.keys.indexOf(k)<0){ c.keys.push(k); n++; } } if(n) saveCollections(); return n; }
+  function deleteFolder(id){ const c=collById(id); if(!c) return; collections=collections.filter(x=>x.id!==id); saveCollections(); if(activeCollection===id){ activeCollection=null; nav={kind:"all"}; const cs=$("collSel"); if(cs) cs.value=""; } buildCollSel(); render(); status("Deleted folder “"+c.name+"”."); }
+  function folderMenu(x,y,id){
+    const c=collById(id); if(!c) return;
+    const ctx=$("ctxMenu");
+    ctx.innerHTML=`<div class="ctx-item" data-ren><span class="sf sf-pin"></span>Rename “${esc(c.name)}”</div><div class="ctx-item" data-del><span class="sf sf-trash"></span>Delete folder</div>`;
+    ctx.querySelector("[data-ren]").onclick=()=>{ hideCtx(); newFolderOpen=false; renameId=id; renderSidebar(); };
+    ctx.querySelector("[data-del]").onclick=()=>{ hideCtx(); deleteFolder(id); };
+    ctx.style.display="block";
+    ctx.style.left=Math.min(x,window.innerWidth-ctx.offsetWidth-8)+"px";
+    ctx.style.top=Math.min(y,window.innerHeight-ctx.offsetHeight-8)+"px";
+  }
   function ignoreLabel(name){
     if(!name || name==="Uncategorized" || name==="Unknown artist") return;
     const inp=$("ignore"); if(!inp) return;
