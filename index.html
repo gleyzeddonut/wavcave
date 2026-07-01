@@ -1676,9 +1676,19 @@
 
   /* ---- in-app updates (driven by the native app via gh) ---- */
   function bfSend(o){ try{ window.webkit.messageHandlers.bf.postMessage(o); }catch(e){} }
-  window.bfUpdate = (ver,notes)=>{ const s=$("settings"); if(s) s.classList.remove("show"); const b=$("updateBar"); if(!b) return; b.dataset.ver=ver; b.dataset.mode=""; $("updateMsg").innerHTML="WavCave <b>"+esc(String(ver))+"</b> is available."; const btn=$("updateBtn"); btn.textContent="Update"; btn.disabled=false; $("updateLater").style.display=""; b.classList.add("show"); };
-  window.bfUpdateReady = ()=>{ const b=$("updateBar"); $("updateMsg").innerHTML="Update downloaded \u2014 restart to finish."; b.dataset.mode="restart"; const btn=$("updateBtn"); btn.textContent="Restart"; btn.disabled=false; $("updateLater").style.display="none"; b.classList.add("show"); };
-  window.bfUpdateError = ()=>{ const b=$("updateBar"); $("updateMsg").textContent="Update failed \u2014 try again later."; b.dataset.mode=""; const btn=$("updateBtn"); btn.textContent="Retry"; btn.disabled=false; };
+  let setUpdVer="";
+  function setUpdApply(mode){
+    const btn=$("setCheckUpd"); if(!btn) return; const msg=$("setUpdateMsg");
+    btn.dataset.mode=mode; btn.disabled=false;
+    if(mode==="available"){ btn.innerHTML='<span class="sf sf-rescan"></span>Download WavCave '+esc(String(setUpdVer)); if(msg) msg.textContent="A new version is available."; }
+    else if(mode==="downloading"){ btn.innerHTML='<span class="sf sf-rescan"></span>Downloading\u2026'; btn.disabled=true; if(msg) msg.textContent=""; }
+    else if(mode==="ready"){ btn.innerHTML='<span class="sf sf-rescan"></span>Restart to finish'; if(msg) msg.textContent="Update downloaded."; }
+    else { btn.dataset.mode="idle"; btn.innerHTML='<span class="sf sf-rescan"></span>Check for Updates'; }
+  }
+  const _setOpen = ()=>{ const s=$("settings"); return !!(s&&s.classList.contains("show")); };
+  window.bfUpdate = (ver,notes)=>{ setUpdVer=ver; const b=$("updateBar"); if(b){ b.dataset.ver=ver; b.dataset.mode=""; $("updateMsg").innerHTML="WavCave <b>"+esc(String(ver))+"</b> is available."; const btn=$("updateBtn"); btn.textContent="Update"; btn.disabled=false; $("updateLater").style.display=""; } if(_setOpen()){ setUpdApply("available"); } else if(b){ b.classList.add("show"); } };
+  window.bfUpdateReady = ()=>{ const b=$("updateBar"); if(b){ $("updateMsg").innerHTML="Update downloaded \u2014 restart to finish."; b.dataset.mode="restart"; const btn=$("updateBtn"); btn.textContent="Restart"; btn.disabled=false; $("updateLater").style.display="none"; } if(_setOpen()){ setUpdApply("ready"); } else if(b){ b.classList.add("show"); } };
+  window.bfUpdateError = ()=>{ const b=$("updateBar"); if(b){ $("updateMsg").textContent="Update failed \u2014 try again later."; b.dataset.mode=""; const btn=$("updateBtn"); btn.textContent="Retry"; btn.disabled=false; } if(_setOpen()){ setUpdApply("idle"); const m=$("setUpdateMsg"); if(m) m.textContent="Update failed \u2014 try again."; } };
   window.bfUpdateNone = (uptodate)=>{ const m=uptodate?"You\u2019re on the latest version.":"Couldn\u2019t check for updates right now."; status(m); const sm=$("setUpdateMsg"); if(sm) sm.textContent=m; };
   if ($("updateBtn")) $("updateBtn").addEventListener("click", ()=>{
     const b=$("updateBar"), btn=$("updateBtn");
@@ -1813,7 +1823,7 @@
       el.addEventListener("contextmenu",e=>{ e.preventDefault(); e.stopPropagation(); folderMenu(e.clientX,e.clientY,el.dataset.coll); });
       el.addEventListener("dragover",e=>{ if([...e.dataTransfer.types].includes("application/x-wavcave-keys")){ e.preventDefault(); el.classList.add("sb-drop"); } });
       el.addEventListener("dragleave",()=>el.classList.remove("sb-drop"));
-      el.addEventListener("drop",e=>{ e.preventDefault(); el.classList.remove("sb-drop"); let keys=[]; try{ keys=JSON.parse(e.dataTransfer.getData("application/x-wavcave-keys")||"[]"); }catch(_){} const c=collById(el.dataset.coll); const n=addKeysToCollection(el.dataset.coll,keys); if(n){ buildCollSel(); renderSidebar(); status("Added "+n+" song"+(n>1?"s":"")+" to “"+(c?c.name:"folder")+"”."); } });
+      el.addEventListener("drop",e=>{ e.preventDefault(); el.classList.remove("sb-drop"); let keys=[]; try{ keys=JSON.parse(e.dataTransfer.getData("application/x-wavcave-keys")||"[]"); }catch(_){} const c=collById(el.dataset.coll); const cn=c?c.name:"folder"; const n=addKeysToCollection(el.dataset.coll,keys); if(n){ buildCollSel(); renderSidebar(); status("Added "+n+" song"+(n>1?"s":"")+" to “"+cn+"”."); } else if(keys.length){ status((keys.length>1?"Those songs are already in ":"That song is already in ")+"“"+cn+"”."); } });
     });
     body.querySelectorAll(".sb-tw").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); const cx=el.dataset.tw; openCtx.has(cx)?openCtx.delete(cx):openCtx.add(cx); renderSidebar(); });
     body.querySelectorAll(".sb-ctx").forEach(el=>el.onclick=()=>sbNav("context",el.dataset.ctx));
@@ -1904,7 +1914,7 @@
   }
 
   let _kwSnap="";
-  function openSettings(){ _kwSnap=JSON.stringify(keywords); renderKwEditor($("settingsKw")); const rn=$("setRescan"); if(rn) rn.style.display=(roots.length&&!DEMO)?"":"none"; $("settings").classList.add("show"); }
+  function openSettings(){ _kwSnap=JSON.stringify(keywords); renderKwEditor($("settingsKw")); const rn=$("setRescan"); if(rn) rn.style.display=(roots.length&&!DEMO)?"":"none"; setUpdApply("idle"); const _um=$("setUpdateMsg"); if(_um) _um.textContent=""; $("settings").classList.add("show"); }
   function closeSettings(){
     $("settings").classList.remove("show");
     keywords=keywords.filter(k=>k.word.trim()); if(!keywords.length) keywords=DEFAULT_KW(); saveKeywords();
@@ -1912,7 +1922,12 @@
   }
 
   window.bfOpenSettings = openSettings;   // opened from the native app menu (Settings…) + ⌘,
-  { const b=$("setCheckUpd"); if(b) b.addEventListener("click", ()=>{ const sm=$("setUpdateMsg"); if(sm) sm.textContent="Checking…"; bfSend({action:"check"}); }); }
+  { const b=$("setCheckUpd"); if(b) b.addEventListener("click", ()=>{
+      const mode=b.dataset.mode||"idle";
+      if(mode==="available"){ bfSend({action:"download", tag:setUpdVer}); setUpdApply("downloading"); }
+      else if(mode==="ready"){ bfSend({action:"restart"}); const m=$("setUpdateMsg"); if(m) m.textContent="Restarting…"; b.disabled=true; }
+      else { const m=$("setUpdateMsg"); if(m) m.textContent="Checking…"; bfSend({action:"check"}); }
+  }); }
   { const b=$("setClose"); if(b) b.addEventListener("click", closeSettings); }
   { const b=$("setBg"); if(b) b.addEventListener("click", closeSettings); }
   { const b=$("setupGo"); if(b) b.addEventListener("click", finishSetup); }
