@@ -660,7 +660,6 @@
     </div>
     <div class="grow"></div>
     <div class="pathchip" id="pathchip"><span class="dot"></span><span class="p mono" id="pathtext"></span></div>
-    <button class="btn ghost iconbtn" id="settingsBtn" title="Settings"><span class="sf sf-gear"></span></button>
     <button class="btn ghost" id="rescanBtn" title="Rescan this folder" style="display:none;"><span class="sf sf-rescan"></span>Rescan</button>
     <button class="btn primary" id="pickBtn"><span class="sf sf-folderplus"></span>Add folder&hellip;</button>
   </header>
@@ -806,6 +805,9 @@
     <p class="set-sub">Skip any file inside a folder whose name <em>contains</em> one of these tags (comma-separated) &mdash; so <code>stem</code> also catches <code>stems</code> and <code>GoodCryStems</code>. Applies instantly.</p>
     <input id="ignore" class="kw-word" style="width:100%;" spellcheck="false" autocapitalize="off" autocomplete="off" type="text" value="samples, processed, stem" />
     <p class="set-note">Tip: right-click any folder in the left sidebar to add it here.</p>
+    <div class="set-sec-title" style="margin-top:26px;">Software</div>
+    <button class="btn" id="setCheckUpd"><span class="sf sf-rescan"></span>Check for Updates</button>
+    <p class="set-note" id="setUpdateMsg"></p>
   </div></div>
   <div id="dropOverlay"><div class="box"><span class="sf sf-folderplus"></span>Drop a folder to add it</div></div>
   <div id="palette"><div class="pal-box">
@@ -1650,10 +1652,10 @@
 
   /* ---- in-app updates (driven by the native app via gh) ---- */
   function bfSend(o){ try{ window.webkit.messageHandlers.bf.postMessage(o); }catch(e){} }
-  window.bfUpdate = (ver,notes)=>{ const b=$("updateBar"); if(!b) return; b.dataset.ver=ver; b.dataset.mode=""; $("updateMsg").innerHTML="WavCave <b>"+esc(String(ver))+"</b> is available."; const btn=$("updateBtn"); btn.textContent="Update"; btn.disabled=false; $("updateLater").style.display=""; b.classList.add("show"); };
+  window.bfUpdate = (ver,notes)=>{ const s=$("settings"); if(s) s.classList.remove("show"); const b=$("updateBar"); if(!b) return; b.dataset.ver=ver; b.dataset.mode=""; $("updateMsg").innerHTML="WavCave <b>"+esc(String(ver))+"</b> is available."; const btn=$("updateBtn"); btn.textContent="Update"; btn.disabled=false; $("updateLater").style.display=""; b.classList.add("show"); };
   window.bfUpdateReady = ()=>{ const b=$("updateBar"); $("updateMsg").innerHTML="Update downloaded \u2014 restart to finish."; b.dataset.mode="restart"; const btn=$("updateBtn"); btn.textContent="Restart"; btn.disabled=false; $("updateLater").style.display="none"; b.classList.add("show"); };
   window.bfUpdateError = ()=>{ const b=$("updateBar"); $("updateMsg").textContent="Update failed \u2014 try again later."; b.dataset.mode=""; const btn=$("updateBtn"); btn.textContent="Retry"; btn.disabled=false; };
-  window.bfUpdateNone = (uptodate)=>{ status(uptodate?"You\u2019re on the latest version.":"Couldn\u2019t check for updates right now."); };
+  window.bfUpdateNone = (uptodate)=>{ const m=uptodate?"You\u2019re on the latest version.":"Couldn\u2019t check for updates right now."; status(m); const sm=$("setUpdateMsg"); if(sm) sm.textContent=m; };
   if ($("updateBtn")) $("updateBtn").addEventListener("click", ()=>{
     const b=$("updateBar"), btn=$("updateBtn");
     if (b.dataset.mode==="restart"){ bfSend({action:"restart"}); $("updateMsg").textContent="Restarting\u2026"; btn.disabled=true; $("updateLater").style.display="none"; }
@@ -1885,7 +1887,8 @@
     if(JSON.stringify(keywords)!==_kwSnap && roots.length && !DEMO) loadAllFolders();
   }
 
-  { const b=$("settingsBtn"); if(b) b.addEventListener("click", openSettings); }
+  window.bfOpenSettings = openSettings;   // opened from the native app menu (Settings…) + ⌘,
+  { const b=$("setCheckUpd"); if(b) b.addEventListener("click", ()=>{ const sm=$("setUpdateMsg"); if(sm) sm.textContent="Checking…"; bfSend({action:"check"}); }); }
   { const b=$("setClose"); if(b) b.addEventListener("click", closeSettings); }
   { const b=$("setBg"); if(b) b.addEventListener("click", closeSettings); }
   { const b=$("setupGo"); if(b) b.addEventListener("click", finishSetup); }

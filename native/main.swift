@@ -159,6 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
     }
     @objc func checkForUpdatesMenu() { checkForUpdate(manual: true) }
+    @objc func openSettingsMenu() { web("window.bfOpenSettings && window.bfOpenSettings()") }
 
     // Fetch bytes from a URL synchronously (used for the GitHub API + asset download).
     func httpData(_ url: URL, timeout: TimeInterval = 12) -> (code: Int, data: Data?) {
@@ -294,6 +295,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let appItem = NSMenuItem(); mainMenu.addItem(appItem)
         let appMenu = NSMenu(); appItem.submenu = appMenu
         appMenu.addItem(withTitle: "About WavCave", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        let prefs = appMenu.addItem(withTitle: "Settings…", action: #selector(openSettingsMenu), keyEquivalent: ",")
+        prefs.target = self
         appMenu.addItem(.separator())
         let upd = appMenu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdatesMenu), keyEquivalent: "")
         upd.target = self
