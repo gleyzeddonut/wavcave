@@ -1,0 +1,35 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="WavCave">
+  <defs>
+    <clipPath id="squircle"><rect width="1024" height="1024" rx="229" ry="229"></rect></clipPath>
+    <radialGradient id="wax" cx="38%" cy="34%" r="62%">
+      <stop offset="0" stop-color="#463a2f"></stop>
+      <stop offset="0.72" stop-color="#14100c"></stop>
+      <stop offset="1" stop-color="#14100c"></stop>
+    </radialGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff0d2" stop-opacity="0.14"></stop>
+      <stop offset="0.42" stop-color="#fff0d2" stop-opacity="0"></stop>
+    </linearGradient>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect width="1024" height="1024" fill="#26201b"></rect>
+    
+    <circle cx="512" cy="512" r="416" fill="url(#wax)"></circle>
+    
+    <circle cx="512" cy="512" r="368" fill="none" stroke="#efe4cd" stroke-opacity="0.13" stroke-width="8"></circle>
+    <circle cx="512" cy="512" r="296" fill="none" stroke="#efe4cd" stroke-opacity="0.10" stroke-width="8"></circle>
+    
+    <circle cx="512" cy="512" r="224" fill="#a8492f"></circle>
+    <circle cx="512" cy="512" r="224" fill="none" stroke="#bd9233" stroke-opacity="0.55" stroke-width="12"></circle>
+    
+    <g fill="#efe4cd">
+      <rect x="384" y="480" width="32" height="64" rx="16"></rect>
+      <rect x="440" y="444" width="32" height="136" rx="16"></rect>
+      <rect x="496" y="412" width="32" height="200" rx="16"></rect>
+      <rect x="552" y="460" width="32" height="104" rx="16"></rect>
+      <rect x="608" y="484" width="32" height="56" rx="16"></rect>
+    </g>
+    
+    <rect width="1024" height="1024" fill="url(#gloss)"></rect>
+  </g>
+</svg>
