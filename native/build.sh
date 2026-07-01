@@ -4,11 +4,11 @@
 set -e
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "$HERE/.." && pwd)"          # project root (holds index.html, server.py, …)
+ROOT="$(cd "$HERE/.." && pwd)"          # project root (holds index.html, …)
 OUT="$ROOT/WavCave.app"
 
 echo "Compiling…"
-xcrun swiftc -O "$HERE/main.swift" -o "$HERE/WavCave" -framework Cocoa -framework WebKit
+xcrun swiftc -O "$HERE/main.swift" "$HERE/Server.swift" -o "$HERE/WavCave" -framework Cocoa -framework WebKit
 
 echo "Assembling bundle…"
 rm -rf "$OUT"
@@ -21,8 +21,8 @@ if [ -f "$HERE/appicon.icns" ]; then
   cp "$HERE/appicon.icns" "$OUT/Contents/Resources/appicon.icns"
 fi
 
-# Web UI + backend
-cp "$ROOT/index.html" "$ROOT/server.py" "$OUT/Contents/Resources/"
+# Web UI (the backend is compiled into the binary — see Server.swift)
+cp "$ROOT/index.html" "$OUT/Contents/Resources/"
 
 cp "$HERE/Info.plist" "$OUT/Contents/Info.plist"
 

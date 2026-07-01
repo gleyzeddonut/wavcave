@@ -1,13 +1,13 @@
 // WavCave — native standalone macOS app.
-// A WKWebView window that starts the bundled Python backend, then loads the UI
-// from http://127.0.0.1:8765. No browser involved: own Dock icon, own ⌘Q.
+// A WKWebView window with the backend (Server.swift) running in-process, loading
+// the UI from http://127.0.0.1:8765. No browser, no Python: own Dock icon, own ⌘Q.
 
 import Cocoa
 import WebKit
 
-let PORT = 8765
-func appURL() -> URL { URL(string: "http://127.0.0.1:\(PORT)/index.html")! }
-func pingURL() -> URL { URL(string: "http://127.0.0.1:\(PORT)/api/ping")! }
+let PORT = Int(ProcessInfo.processInfo.environment["BF_PORT"] ?? "") ?? 8765
+var serverToken = ""
+func appURL() -> URL { URL(string: "http://127.0.0.1:\(PORT)/index.html?t=\(serverToken)")! }
 
 // WKWebView that accepts folders dropped onto it and hands their real paths to the page.
 final class DropWebView: WKWebView {
@@ -42,7 +42,7 @@ final class DropWebView: WKWebView {
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     var window: NSWindow!
     var webView: WKWebView!
-    var server: Process?
+    var server: WavCaveServer?
     let updateRepo = "gleyzeddonut/wavcave"
     var latestTag = ""
     var latestAssetURL = ""
@@ -83,59 +83,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    // MARK: backend
+    // MARK: backend (in-process — see Server.swift)
+    func dataDir() -> String { NSString(string: "~/Library/Application Support/WavCave").expandingTildeInPath }
+
     func ensureBackendThenLoad() {
-        if ping() { webView.load(URLRequest(url: appURL())); return }
-        startServer()
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
-            for _ in 0..<80 {                       // ~20s max
-                if self.ping() {
-                    DispatchQueue.main.async { self.webView.load(URLRequest(url: appURL())) }
-                    return
-                }
-                Thread.sleep(forTimeInterval: 0.25)
+        // One-time migration from the old "Bounce Finder" brand: carry the existing
+        // library, settings, scan cache and waveform peaks over so nothing is lost.
+        let fm = FileManager.default
+        let old = NSString(string: "~/Library/Application Support/BounceFinder").expandingTildeInPath
+        if !fm.fileExists(atPath: dataDir()), fm.fileExists(atPath: old) {
+            try? fm.moveItem(atPath: old, toPath: dataDir())
+        }
+
+        serverToken = Self.randomToken()
+        let s = WavCaveServer(port: UInt16(PORT), rootDir: Bundle.main.resourcePath ?? ".",
+                              dataDir: dataDir(), token: serverToken)
+        s.pickFolder = { [weak self] in self?.pickFolderPanel() }
+        do {
+            try s.start()
+            server = s
+        } catch {
+            // Port taken — most likely another WavCave instance owns the server.
+            // Reuse its token (written to the data dir on start) so this window still works.
+            NSLog("WavCave: backend not started (\(error)); reusing running server")
+            if let t = try? String(contentsOfFile: dataDir() + "/token", encoding: .utf8) {
+                serverToken = t.trimmingCharacters(in: .whitespacesAndNewlines)
             }
-            DispatchQueue.main.async { self.webView.load(URLRequest(url: appURL())) }  // load anyway (UI shows demo)
         }
+        webView.load(URLRequest(url: appURL()))
     }
 
-    func ping() -> Bool {
-        var req = URLRequest(url: pingURL())
-        req.timeoutInterval = 0.8
-        req.cachePolicy = .reloadIgnoringLocalCacheData
-        let sem = DispatchSemaphore(value: 0)
-        var ok = false
-        URLSession.shared.dataTask(with: req) { _, resp, _ in
-            if let h = resp as? HTTPURLResponse, h.statusCode == 200 { ok = true }
-            sem.signal()
-        }.resume()
-        _ = sem.wait(timeout: .now() + 1.2)
-        return ok
+    static func randomToken() -> String {
+        (0..<16).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
     }
 
-    func pythonPath() -> String? {
-        for p in ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"] {
-            if FileManager.default.isExecutableFile(atPath: p) { return p }
+    // Native folder picker for /api/pick; called from a server worker thread.
+    func pickFolderPanel() -> String? {
+        var result: String?
+        let work = {
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = false
+            panel.canChooseDirectories = true
+            panel.allowsMultipleSelection = false
+            panel.prompt = "Choose"
+            panel.message = "Choose a folder to search for bounce files"
+            NSApp.activate(ignoringOtherApps: true)
+            if panel.runModal() == .OK { result = panel.url?.path }
         }
-        return nil
-    }
-
-    func startServer() {
-        guard let py = pythonPath(), let res = Bundle.main.resourcePath else { return }
-        let script = (res as NSString).appendingPathComponent("server.py")
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: py)
-        p.arguments = [script]
-        var env = ProcessInfo.processInfo.environment
-        env["BF_PORT"] = String(PORT)
-        p.environment = env
-        do { try p.run(); server = p } catch { NSLog("WavCave: backend failed to start: \(error)") }
+        if Thread.isMainThread { work() } else { DispatchQueue.main.sync(execute: work) }
+        return result
     }
 
     // MARK: lifecycle
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { true }
-    func applicationWillTerminate(_ note: Notification) { server?.terminate() }
+    func applicationWillTerminate(_ note: Notification) { server?.stop() }
 
     // Re-show the window if the Dock icon is clicked while running.
     func applicationShouldHandleReopen(_ app: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -271,15 +272,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let dest = Bundle.main.bundlePath
         let pid = ProcessInfo.processInfo.processIdentifier
         let sp = NSString(string: "~/Library/Application Support/WavCave/swap.sh").expandingTildeInPath
+        // Stage the new copy NEXT TO the destination, then swap with renames — the old
+        // app is only removed after the new one is fully in place, so a failed copy
+        // can never leave the user with no app at all.
         let script = """
         #!/bin/sh
         while kill -0 \(pid) 2>/dev/null; do sleep 0.3; done
         sleep 0.5
-        /bin/rm -rf "\(dest)"
-        /usr/bin/ditto "\(staged)" "\(dest)"
-        /bin/rm -rf "\(updateDir())"
-        /usr/bin/xattr -dr com.apple.quarantine "\(dest)" 2>/dev/null
-        /usr/bin/open "\(dest)"
+        DEST="\(dest)"
+        STAGE="$DEST.update-new"
+        OLD="$DEST.update-old"
+        /bin/rm -rf "$STAGE" "$OLD"
+        if /usr/bin/ditto "\(staged)" "$STAGE"; then
+          /bin/mv "$DEST" "$OLD" 2>/dev/null
+          if /bin/mv "$STAGE" "$DEST"; then
+            /bin/rm -rf "$OLD" "\(updateDir())"
+            /usr/bin/xattr -dr com.apple.quarantine "$DEST" 2>/dev/null
+          else
+            /bin/mv "$OLD" "$DEST" 2>/dev/null
+            /bin/rm -rf "$STAGE"
+          fi
+        else
+          /bin/rm -rf "$STAGE"
+        fi
+        /usr/bin/open "$DEST"
         """
         try? script.write(toFile: sp, atomically: true, encoding: .utf8)
         let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/sh")
