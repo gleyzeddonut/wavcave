@@ -8,6 +8,45 @@ ROOT = os.path.dirname(os.path.abspath(__file__))   # static files live here
 ALLOWED = set()                                     # folders we're allowed to read/reveal
 AUDIO_EXT = {".wav", ".mp3"}
 TARGET = {"bounce", "bounces"}
+# Default folder keyword when the client doesn't send its own configuration.
+DEFAULT_KW = [{"word": "bounce", "caseSensitive": False, "pluralize": True}]
+
+
+def _plural(w):
+    lw = w.lower()
+    if lw.endswith(("s", "x", "z", "ch", "sh")):
+        return w + "es"
+    if len(w) > 1 and lw.endswith("y") and lw[-2] not in "aeiou":
+        return w[:-1] + "ies"
+    return w + "s"
+
+
+def _seg_matcher(kws):
+    """Build a fast folder-name matcher from a keyword config list.
+    Each keyword: {word, caseSensitive, pluralize}. Returns match(seg)->bool."""
+    cs_set, ci_set = set(), set()          # case-sensitive exact / case-insensitive exact
+    for kw in (kws or DEFAULT_KW):
+        w = (kw.get("word") or "").strip()
+        if not w:
+            continue
+        cands = [w]
+        if kw.get("pluralize"):
+            p = _plural(w)
+            if p != w:
+                cands.append(p)
+        for c in cands:
+            if kw.get("caseSensitive"):
+                cs_set.add(c)
+            else:
+                ci_set.add(c.lower())
+    if not cs_set and not ci_set:          # nothing valid -> fall back to default
+        for kw in DEFAULT_KW:
+            ci_set.add(kw["word"].lower())
+            ci_set.add(_plural(kw["word"]).lower())
+
+    def match(seg):
+        return seg in cs_set or seg.lower() in ci_set
+    return match
 # All persisted data lives here (overridable so tests never touch the real library).
 DATA_DIR = os.environ.get("BF_DATA_DIR", os.path.expanduser("~/Library/Application Support/BounceFinder"))
 
@@ -53,7 +92,8 @@ def choose_folder():
     return None
 
 
-def _scan_iter(root):
+def _scan_iter(root, kws=None):
+    match = _seg_matcher(kws)
     base = os.path.basename(os.path.normpath(root))
     for dp, _dn, fns in os.walk(root):
         for fn in fns:
@@ -63,7 +103,7 @@ def _scan_iter(root):
             full = os.path.join(dp, fn)
             rel = os.path.relpath(full, root)
             segs = [base] + rel.split(os.sep)
-            if not any(s.lower() in TARGET for s in segs[:-1]):   # must sit inside a bounce/bounces folder
+            if not any(match(s) for s in segs[:-1]):   # must sit inside a configured keyword folder
                 continue
             try:
                 st = os.stat(full)
@@ -80,8 +120,19 @@ def _scan_iter(root):
             }
 
 
-def scan(root):
-    return list(_scan_iter(root))
+def scan(root, kws=None):
+    return list(_scan_iter(root, kws))
+
+
+def _parse_kw(q):
+    raw = (q.get("kw") or [None])[0]
+    if not raw:
+        return None
+    try:
+        v = json.loads(raw)
+        return v if isinstance(v, list) else None
+    except Exception:
+        return None
 
 
 # --- on-disk scan cache (so launch can show the last scan without re-walking) ---
@@ -231,7 +282,7 @@ class H(BaseHTTPRequestHandler):
                 return self._json({"error": "Folder not found"}, 400)
             ALLOWED.add(os.path.realpath(root))
             try:
-                items = scan(root)
+                items = scan(root, _parse_kw(q))
                 write_cache(root, items)
                 return self._json({"root": root, "items": items})
             except Exception as e:
@@ -247,9 +298,10 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/x-ndjson")
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
+            kws = _parse_kw(q)
             items = []
             try:
-                for it in _scan_iter(root):
+                for it in _scan_iter(root, kws):
                     items.append(it)
                     self.wfile.write((json.dumps({"item": it}) + "\n").encode())
                     self.wfile.flush()
