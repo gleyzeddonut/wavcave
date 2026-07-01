@@ -350,8 +350,6 @@
   .cloud.icon:hover{ background:rgba(10,132,255,.1); border-color:rgba(10,132,255,.3); color:#0a6ad6; }
 
   /* clickable path */
-  .fpath.click{ cursor:pointer; }
-  .fpath.click:hover{ color:#0a84ff; }
   .fpath .fp-in{ direction:ltr; unicode-bidi:isolate; }
   .fpath .crumb{ cursor:pointer; border-radius:3px; }
   .fpath .crumb:hover{ color:#0a84ff; text-decoration:underline; }
@@ -1274,15 +1272,15 @@
     const list=$("list"), empty=$("empty");
     if (count===0){
       list.style.display="none"; empty.style.display="block";
-      const anyFilter = !!(pathFilter || q || activeCollection || starredOnly || (nav.kind && nav.kind!=="all"));
+      const anyFilter = !!(pathFilter || q || Object.keys(tok).length || activeCollection || starredOnly || (nav.kind && nav.kind!=="all"));
       const msg = (nav.kind==="recent") ? "Nothing played yet \u2014 songs you audition show up here."
         : pathFilter ? `No songs in \u201c${esc(pathFilter.split("/").pop())}\u201d with the current filters.`
         : activeCollection ? `This folder is empty \u2014 drag songs onto it in the sidebar to add them.`
         : (starredOnly||nav.kind==="starred") ? "No starred songs yet &mdash; tap the &#9734; on a song to keep it close."
         : (nav.kind==="context"||nav.kind==="artist") ? `Nothing here with the current filters.`
-        : (q ? `Nothing matches \u201c${esc(q)}\u201d.` : "No <code>.wav</code> / <code>.mp3</code> files found inside a <code>bounce</code> / <code>bounces</code> folder.");
+        : q ? `Nothing matches \u201c${esc(q)}\u201d.` : Object.keys(tok).length ? "Nothing matches the current search filters." : "No <code>.wav</code> / <code>.mp3</code> files found inside a <code>bounce</code> / <code>bounces</code> folder.";
       empty.innerHTML = msg + (anyFilter ? `<div class="empty-actions"><button class="btn" id="emptyReset">Clear all filters &amp; show everything</button></div>` : "");
-      const er=$("emptyReset"); if(er) er.onclick=()=>{ pathFilter=null; activeCollection=null; starredOnly=false; nav={kind:"all"}; const si=$("search"); if(si) si.value=""; const cs=$("collSel"); if(cs) cs.value=""; renderPathFilterBar(); render(); status(""); };
+      const er=$("emptyReset"); if(er) er.onclick=()=>{ resetNav(); starredOnly=false; const si=$("search"); if(si) si.value=""; renderPathFilterBar(); render(); status(""); };
     } else {
       empty.style.display="none"; list.style.display="flex";
       list.innerHTML=html;
@@ -1302,17 +1300,15 @@
         }, true);
         li.addEventListener("click",e=>{   // plain click = arm this row as the combine anchor (play is the ▶ button only)
           if (selectMode||e.metaKey||e.ctrlKey) return;   // already handled in capture
-          const k=li.dataset.key;
-          focusKey=k; selected.clear(); if(k) selected.add(k); selExplicit=false; updateSelectionUI();
+          armRow(li);
         });
         const pb=li.querySelector(".play");
         if (pb) pb.addEventListener("click",e=>{
           e.stopPropagation();
-          focusKey=li.dataset.key;
+          armRow(li);
           const rec=playOrder[+li.dataset.i];
           if (rec===currentFile && !DEMO){ if(audio.paused) audio.play().catch(()=>{}); else audio.pause(); }
           else play(rec);
-          updateSelectionUI();
         });
         li.addEventListener("contextmenu",e=>{ e.preventDefault(); showCtx(e.clientX,e.clientY,playOrder[+li.dataset.i]); });
         li.addEventListener("mouseenter",()=>prefetch(playOrder[+li.dataset.i]));
@@ -1326,9 +1322,10 @@
 
   function isLinked(key){ const root=find(key); for (const k of mergeMap.keys()) if (find(k)===root) return true; return false; }
   function selVisible(){ return selectMode || selected.size>=2 || (selExplicit && selected.size>=1); }
+  function armRow(li){ const rec=playOrder[+li.dataset.i]; focusKey=rec?rec.abs:null; const k=li.dataset.key; selected.clear(); if(k) selected.add(k); selExplicit=false; updateSelectionUI(); }
   function updateSelectionUI(){
     const vis=selVisible();
-    [...$("list").children].forEach(li=>{ const k=li.dataset.key; li.classList.toggle("selected", vis ? selected.has(k) : (k===focusKey)); });
+    [...$("list").children].forEach(li=>{ const k=li.dataset.key; const rec=playOrder[+li.dataset.i]; li.classList.toggle("selected", vis ? selected.has(k) : (!!focusKey && !!rec && rec.abs===focusKey)); });
     const cb=$("combineBtn"); if (cb) cb.classList.toggle("on", selectMode);
     renderSelBar();
   }
@@ -1350,7 +1347,7 @@
     const ds=$("doSplit");   if (ds) ds.onclick=()=>{ if (uncombine([...selected][0])) exitSelect(true); };
     $("selDone").onclick=()=>exitSelect(false);
   }
-  function exitSelect(changed){ selectMode=false; selExplicit=false; selected.clear(); if (changed) render(); else updateSelectionUI(); }
+  function exitSelect(changed){ selectMode=false; selExplicit=false; selected.clear(); focusKey=null; if (changed) render(); else updateSelectionUI(); }
   function markPlaying(){
     const idx=currentFile?playOrder.indexOf(currentFile):-1;
     const isPlaying = !!currentFile && (DEMO?demoPlaying:!audio.paused);
@@ -1358,7 +1355,8 @@
     $("reel").classList.toggle("spin", isPlaying);
   }
 
-  function setPathFilter(dir){ pathFilter=dir||null; if(pathFilter){ nav={kind:"all"}; activeCollection=null; const cs=$("collSel"); if(cs) cs.value=""; } renderPathFilterBar(); render(); }
+  function resetNav(){ nav={kind:"all"}; activeCollection=null; pathFilter=null; focusKey=null; const cs=$("collSel"); if(cs) cs.value=""; }
+  function setPathFilter(dir){ resetNav(); pathFilter=dir||null; renderPathFilterBar(); render(); }
   function renderPathFilterBar(){
     const bar=$("pathFilterBar");
     if (!pathFilter){ bar.classList.remove("show"); bar.innerHTML=""; return; }
@@ -1708,19 +1706,19 @@
 
   /* ---- in-app updates (driven by the native app via gh) ---- */
   function bfSend(o){ try{ window.webkit.messageHandlers.bf.postMessage(o); }catch(e){} }
-  let setUpdVer="";
+  let setUpdVer="", updState="idle";
   function setUpdApply(mode){
-    const btn=$("setCheckUpd"); if(!btn) return; const msg=$("setUpdateMsg");
+    updState=mode; const btn=$("setCheckUpd"); if(!btn) return; const msg=$("setUpdateMsg");
     btn.dataset.mode=mode; btn.disabled=false;
     if(mode==="available"){ btn.innerHTML='<span class="sf sf-rescan"></span>Download WavCave '+esc(String(setUpdVer)); if(msg) msg.textContent="A new version is available."; }
     else if(mode==="downloading"){ btn.innerHTML='<span class="sf sf-rescan"></span>Downloading\u2026'; btn.disabled=true; if(msg) msg.textContent=""; }
     else if(mode==="ready"){ btn.innerHTML='<span class="sf sf-rescan"></span>Restart to finish'; if(msg) msg.textContent="Update downloaded."; }
-    else { btn.dataset.mode="idle"; btn.innerHTML='<span class="sf sf-rescan"></span>Check for Updates'; }
+    else { btn.dataset.mode="idle"; btn.innerHTML='<span class="sf sf-rescan"></span>Check for Updates'; if(msg) msg.textContent=""; }
   }
   const _setOpen = ()=>{ const s=$("settings"); return !!(s&&s.classList.contains("show")); };
-  window.bfUpdate = (ver,notes)=>{ setUpdVer=ver; const b=$("updateBar"); if(b){ b.dataset.ver=ver; b.dataset.mode=""; $("updateMsg").innerHTML="WavCave <b>"+esc(String(ver))+"</b> is available."; const btn=$("updateBtn"); btn.textContent="Update"; btn.disabled=false; $("updateLater").style.display=""; } if(_setOpen()){ setUpdApply("available"); } else if(b){ b.classList.add("show"); } };
-  window.bfUpdateReady = ()=>{ const b=$("updateBar"); if(b){ $("updateMsg").innerHTML="Update downloaded \u2014 restart to finish."; b.dataset.mode="restart"; const btn=$("updateBtn"); btn.textContent="Restart"; btn.disabled=false; $("updateLater").style.display="none"; } if(_setOpen()){ setUpdApply("ready"); } else if(b){ b.classList.add("show"); } };
-  window.bfUpdateError = ()=>{ const b=$("updateBar"); if(b){ $("updateMsg").textContent="Update failed \u2014 try again later."; b.dataset.mode=""; const btn=$("updateBtn"); btn.textContent="Retry"; btn.disabled=false; } if(_setOpen()){ setUpdApply("idle"); const m=$("setUpdateMsg"); if(m) m.textContent="Update failed \u2014 try again."; } };
+  window.bfUpdate = (ver,notes)=>{ setUpdVer=ver; const b=$("updateBar"); if(b){ b.dataset.ver=ver; b.dataset.mode=""; $("updateMsg").innerHTML="WavCave <b>"+esc(String(ver))+"</b> is available."; const btn=$("updateBtn"); btn.textContent="Update"; btn.disabled=false; $("updateLater").style.display=""; } setUpdApply("available"); if(!_setOpen() && b){ b.classList.add("show"); } };
+  window.bfUpdateReady = ()=>{ const b=$("updateBar"); if(b){ $("updateMsg").innerHTML="Update downloaded \u2014 restart to finish."; b.dataset.mode="restart"; const btn=$("updateBtn"); btn.textContent="Restart"; btn.disabled=false; $("updateLater").style.display="none"; } setUpdApply("ready"); if(!_setOpen() && b){ b.classList.add("show"); } };
+  window.bfUpdateError = ()=>{ const b=$("updateBar"); if(b){ $("updateMsg").textContent="Update failed \u2014 try again later."; b.dataset.mode=""; const btn=$("updateBtn"); btn.textContent="Retry"; btn.disabled=false; } setUpdApply("available"); const m=$("setUpdateMsg"); if(m) m.textContent="Update failed \u2014 try again."; };
   window.bfUpdateNone = (uptodate)=>{ const m=uptodate?"You\u2019re on the latest version.":"Couldn\u2019t check for updates right now."; status(m); const sm=$("setUpdateMsg"); if(sm) sm.textContent=m; };
   if ($("updateBtn")) $("updateBtn").addEventListener("click", ()=>{
     const b=$("updateBar"), btn=$("updateBtn");
@@ -1841,21 +1839,21 @@
     }
     body.innerHTML=h;
     body.querySelectorAll("[data-nav]").forEach(el=>el.onclick=()=>sbNav(el.dataset.nav));
-    { const nb=$("sbNewFolder"); if(nb) nb.onclick=(e)=>{ e.stopPropagation(); renameId=null; newFolderOpen=!newFolderOpen; renderSidebar(); const inp=$("sbNewInput"); if(inp) inp.focus(); }; }
+    { const nb=$("sbNewFolder"); if(nb){ nb.onmousedown=(e)=>e.preventDefault(); nb.onclick=(e)=>{ e.stopPropagation(); renameId=null; newFolderOpen=!newFolderOpen; renderSidebar(); const inp=$("sbNewInput"); if(inp) inp.focus(); }; } }
     { const inp=$("sbNewInput"); if(inp){
         inp.onkeydown=(e)=>{ if(e.key==="Enter"){ const nm=inp.value.trim(); newFolderOpen=false; if(nm){ const id=newFolder(nm); activeCollection=id; nav={kind:"all"}; const cs=$("collSel"); if(cs) cs.value=id; buildCollSel(); render(); } else renderSidebar(); } else if(e.key==="Escape"){ newFolderOpen=false; renderSidebar(); } };
         inp.onblur=()=>{ if(newFolderOpen){ const nm=inp.value.trim(); newFolderOpen=false; if(nm){ newFolder(nm); buildCollSel(); } renderSidebar(); } };
     } }
     { const inp=$("sbRenameInput"); if(inp){
         const commit=()=>{ const c=collById(inp.dataset.id); const nm=inp.value.trim(); if(c&&nm){ c.name=nm; saveCollections(); buildCollSel(); } renameId=null; render(); };
-        inp.onkeydown=(e)=>{ if(e.key==="Enter") commit(); else if(e.key==="Escape"){ renameId=null; renderSidebar(); } };
+        inp.onkeydown=(e)=>{ if(e.key==="Enter"){ inp.onblur=null; commit(); } else if(e.key==="Escape"){ inp.onblur=null; renameId=null; renderSidebar(); } };
         inp.onblur=commit; inp.focus(); inp.select();
     } }
     body.querySelectorAll(".sb-folder").forEach(el=>{
       el.onclick=()=>sbColl(el.dataset.coll);
       el.addEventListener("contextmenu",e=>{ e.preventDefault(); e.stopPropagation(); folderMenu(e.clientX,e.clientY,el.dataset.coll); });
       el.addEventListener("dragover",e=>{ if([...e.dataTransfer.types].includes("application/x-wavcave-keys")){ e.preventDefault(); el.classList.add("sb-drop"); } });
-      el.addEventListener("dragleave",()=>el.classList.remove("sb-drop"));
+      el.addEventListener("dragleave",e=>{ if(!el.contains(e.relatedTarget)) el.classList.remove("sb-drop"); });
       el.addEventListener("drop",e=>{ e.preventDefault(); el.classList.remove("sb-drop"); let keys=[]; try{ keys=JSON.parse(e.dataTransfer.getData("application/x-wavcave-keys")||"[]"); }catch(_){} const c=collById(el.dataset.coll); const cn=c?c.name:"folder"; const n=addKeysToCollection(el.dataset.coll,keys); if(n){ buildCollSel(); renderSidebar(); status("Added "+n+" song"+(n>1?"s":"")+" to “"+cn+"”."); } else if(keys.length){ status((keys.length>1?"Those songs are already in ":"That song is already in ")+"“"+cn+"”."); } });
     });
     body.querySelectorAll(".sb-tw").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); const cx=el.dataset.tw; openCtx.has(cx)?openCtx.delete(cx):openCtx.add(cx); renderSidebar(); });
@@ -1863,9 +1861,9 @@
     body.querySelectorAll(".sb-art").forEach(el=>el.onclick=()=>sbArt(el.dataset.art,el.dataset.actx));
     body.querySelectorAll(".sb-ctx,.sb-art").forEach(el=>el.addEventListener("contextmenu",e=>{ e.preventDefault(); e.stopPropagation(); sidebarIgnoreMenu(e.clientX,e.clientY,el.dataset.ctx||el.dataset.art); }));
   }
-  function sbNav(kind,value){ nav=value!=null?{kind:kind,value:value}:{kind:kind}; activeCollection=null; pathFilter=null; const cs=$("collSel"); if(cs) cs.value=""; renderPathFilterBar(); render(); }
-  function sbArt(a,cx){ nav={kind:"artist",value:a,ctx:cx}; activeCollection=null; pathFilter=null; const cs=$("collSel"); if(cs) cs.value=""; renderPathFilterBar(); render(); }
-  function sbColl(id){ activeCollection=id; nav={kind:"all"}; pathFilter=null; const cs=$("collSel"); if(cs) cs.value=id; renderPathFilterBar(); render(); }
+  function sbNav(kind,value){ resetNav(); nav=value!=null?{kind:kind,value:value}:{kind:kind}; renderPathFilterBar(); render(); }
+  function sbArt(a,cx){ resetNav(); nav={kind:"artist",value:a,ctx:cx}; renderPathFilterBar(); render(); }
+  function sbColl(id){ resetNav(); activeCollection=id; const cs=$("collSel"); if(cs) cs.value=id; renderPathFilterBar(); render(); }
   function newFolder(name){ return newCollection(name); }
   function addKeysToCollection(id,keys){ const c=collById(id); if(!c) return 0; let n=0; for(const k of keys){ if(k && c.keys.indexOf(k)<0){ c.keys.push(k); n++; } } if(n) saveCollections(); return n; }
   function deleteFolder(id){ const c=collById(id); if(!c) return; collections=collections.filter(x=>x.id!==id); saveCollections(); if(activeCollection===id){ activeCollection=null; nav={kind:"all"}; const cs=$("collSel"); if(cs) cs.value=""; } buildCollSel(); render(); status("Deleted folder “"+c.name+"”."); }
@@ -1874,7 +1872,7 @@
     const ctx=$("ctxMenu");
     ctx.innerHTML=`<div class="ctx-item" data-ren><span class="sf sf-pin"></span>Rename “${esc(c.name)}”</div><div class="ctx-item" data-del><span class="sf sf-trash"></span>Delete folder</div>`;
     ctx.querySelector("[data-ren]").onclick=()=>{ hideCtx(); newFolderOpen=false; renameId=id; renderSidebar(); };
-    ctx.querySelector("[data-del]").onclick=()=>{ hideCtx(); deleteFolder(id); };
+    ctx.querySelector("[data-del]").onclick=()=>{ hideCtx(); confirmDialog({ title:"Delete folder?", message:"Delete \u201c"+esc(c.name)+"\u201d? Your songs stay in the library.", actions:[ {label:"Delete folder", cls:"danger", onClick:()=>deleteFolder(id)}, {label:"Cancel", cls:"ghost"} ] }); };
     ctx.style.display="block";
     ctx.style.left=Math.min(x,window.innerWidth-ctx.offsetWidth-8)+"px";
     ctx.style.top=Math.min(y,window.innerHeight-ctx.offsetHeight-8)+"px";
@@ -1947,7 +1945,7 @@
   }
 
   let _kwSnap="";
-  function openSettings(){ _kwSnap=JSON.stringify(keywords); renderKwEditor($("settingsKw")); const rn=$("setRescan"); if(rn) rn.style.display=(roots.length&&!DEMO)?"":"none"; setUpdApply("idle"); const _um=$("setUpdateMsg"); if(_um) _um.textContent=""; $("settings").classList.add("show"); }
+  function openSettings(){ _kwSnap=JSON.stringify(keywords); renderKwEditor($("settingsKw")); const rn=$("setRescan"); if(rn) rn.style.display=(roots.length&&!DEMO)?"":"none"; setUpdApply(updState); $("settings").classList.add("show"); }
   function closeSettings(){
     $("settings").classList.remove("show");
     keywords=keywords.filter(k=>k.word.trim()); if(!keywords.length) keywords=DEFAULT_KW(); saveKeywords();
