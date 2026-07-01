@@ -666,10 +666,6 @@
         <span class="sf sf-search"></span>
         <input id="search" type="text" placeholder="Search every song by name or path&hellip;" autocomplete="off" spellcheck="false" />
       </div>
-      <div class="seg">
-        <button class="toggle" id="groupTog" aria-pressed="true">&#9776; Group versions</button>
-        <button class="toggle" id="starTog" aria-pressed="false"><span class="sf sf-starfill star"></span>Starred</button>
-      </div>
       <button class="btn ghost" id="expandBtn">Expand all</button>
       <label class="sortsel"><span class="sl">Show</span><select id="collSel"><option value="">All songs</option></select></label>
       <label class="sortsel"><span class="sl">Sort</span><select id="sortSel"><option value="name">Name</option><option value="artist">Artist</option><option value="context">Context</option><option value="recent">Recent</option></select></label>
@@ -881,7 +877,7 @@
 
   let grouping = true, starredOnly = false, autoDl = false, sortMode = "name";
   const saveSettings = () => { try { localStorage.setItem("bf_settings", JSON.stringify({ ignore:$("ignore").value, group:grouping, starred:starredOnly, autodl:autoDl, sort:sortMode })); } catch(e){} };
-  function loadSettings(){ try { const s=JSON.parse(localStorage.getItem("bf_settings")||"null"); if(s){ if(typeof s.ignore==="string") $("ignore").value=s.ignore; if(typeof s.group==="boolean") grouping=s.group; if(typeof s.starred==="boolean") starredOnly=s.starred; if(typeof s.autodl==="boolean") autoDl=s.autodl; if(typeof s.sort==="string") sortMode=s.sort; } } catch(e){} }
+  function loadSettings(){ try { const s=JSON.parse(localStorage.getItem("bf_settings")||"null"); if(s){ if(typeof s.ignore==="string") $("ignore").value=s.ignore; if(typeof s.autodl==="boolean") autoDl=s.autodl; if(typeof s.sort==="string") sortMode=s.sort; } } catch(e){} grouping=true; starredOnly=false; }
 
   /* ---------- helpers ---------- */
   const segs = (p) => p.split("/");
@@ -1170,8 +1166,6 @@
     $("mainRow").style.display=has?"flex":"none";
     $("rescanBtn").style.display=(has&&!DEMO)?"":"none";
     renderRootsBar(); renderPathFilterBar(); updateCloudBar(); renderSidebar();
-    $("groupTog").setAttribute("aria-pressed", grouping?"true":"false");
-    $("starTog").setAttribute("aria-pressed", starredOnly?"true":"false");
     $("expandBtn").classList.toggle("disabled", !grouping); { const ss=$("sortSel"); if(ss) ss.value=sortMode; } buildCollSel();
 
     if (!has){ $("transport").style.display=currentFile?"flex":"none"; return; }
@@ -1232,7 +1226,7 @@
       list.style.display="none"; empty.style.display="block";
       empty.innerHTML=(nav.kind==="recent")?"Nothing played yet \u2014 songs you audition show up here.":pathFilter
         ? `No files in \u201c${esc(pathFilter.split("/").pop())}\u201d with the current filters.`
-        : starredOnly
+        : (starredOnly||nav.kind==="starred")
         ? "No starred songs yet &mdash; tap the &#9734; on a song to keep it close."
         : (q ? `Nothing matches \u201c${esc(q)}\u201d.` : "No <code>.wav</code> / <code>.mp3</code> files found inside a <code>bounce</code> / <code>bounces</code> folder.");
     } else {
@@ -1508,8 +1502,6 @@
   $("pickBtn2").addEventListener("click", pick);
   let _searchT; $("search").addEventListener("input", ()=>{ clearTimeout(_searchT); _searchT=setTimeout(render, 180); });
   $("ignore").addEventListener("input", ()=>{ saveSettings(); applyFilters(); });
-  $("groupTog").addEventListener("click", ()=>{ grouping=!grouping; if(grouping) starredOnly=false; saveSettings(); render(); });
-  $("starTog").addEventListener("click", ()=>{ starredOnly=!starredOnly; if(starredOnly) grouping=false; saveSettings(); render(); });
   $("expandBtn").addEventListener("click", ()=>{
     const groups=groupsOf(allFiles).filter(g=>g.versions.length);
     const allOpen=groups.length && groups.every(g=>expanded.has(g.key));
