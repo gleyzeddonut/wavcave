@@ -614,6 +614,17 @@
   .ctx-item:hover .ctx-line .sf{ color:#fff; }
   .ctx-item .ctx-sub{ margin-left:24px; }
   .row-chips{ display:flex; align-items:center; gap:5px; flex-shrink:0; }
+  /* ---- confirm dialog ---- */
+  #confirm{ position:fixed; inset:0; z-index:3200; display:none; align-items:center; justify-content:center; }
+  #confirm.show{ display:flex; }
+  #confirm .cf-bg{ position:absolute; inset:0; background:rgba(0,0,0,.34); }
+  .cf-box{ position:relative; width:min(400px,92vw); background:var(--card); border:1px solid var(--line-2); border-radius:14px; box-shadow:0 24px 60px -16px rgba(0,0,0,.5); padding:22px 22px 18px; }
+  .cf-title{ font-family:var(--sans); font-size:17px; font-weight:700; color:var(--ink); margin-bottom:6px; }
+  .cf-msg{ font-size:13.5px; line-height:1.5; color:var(--ink-2); margin-bottom:18px; }
+  .cf-actions{ display:flex; flex-direction:column; gap:8px; }
+  .cf-actions .btn{ width:100%; justify-content:center; }
+  .btn.danger{ background:#e0453a; border-color:#e0453a; color:#fff; }
+  .btn.danger:hover{ background:#c93a30; border-color:#c93a30; }
   /* ===== dark mode (follows the system appearance) ===== */
   @media (prefers-color-scheme: dark){
     :root{
@@ -821,6 +832,7 @@
     <button class="btn" id="setCheckUpd"><span class="sf sf-rescan"></span>Check for Updates</button>
     <p class="set-note" id="setUpdateMsg"></p>
   </div></div>
+  <div id="confirm"><div class="cf-bg" id="cfBg"></div><div class="cf-box"><div class="cf-title" id="cfTitle"></div><div class="cf-msg" id="cfMsg"></div><div class="cf-actions" id="cfActions"></div></div></div>
   <div id="dropOverlay"><div class="box"><span class="sf sf-folderplus"></span>Drop a folder to add it</div></div>
   <div id="palette"><div class="pal-box">
     <input id="palInput" type="text" placeholder="Jump to any song…   try  bpm:140  ·  type:inst  ·  context:kpop" autocomplete="off" spellcheck="false" />
@@ -1360,6 +1372,21 @@
   const hideCtx=()=>{ ctx.style.display="none"; };
   ctx.addEventListener("click", e=>e.stopPropagation());   // clicks inside the menu (e.g. the artist editor) keep it open
   const shortPath=(p)=>p.split("/").slice(-3).join(" / ");
+  function removeStack(stack){
+    if(!stack||!stack.length) return;
+    stack.forEach(f=>fileIgnores.add(f.abs)); saveFileIgnores(); applyFilters();
+    const st=$("status");
+    st.innerHTML = "Removed "+stack.length+" versions from the list. <a href=\"#\" id=\"undoRm\" style=\"color:#0a84ff;cursor:pointer\">Undo</a>";
+    const u=$("undoRm"); if(u) u.onclick=(ev)=>{ ev.preventDefault(); stack.forEach(f=>fileIgnores.delete(f.abs)); saveFileIgnores(); applyFilters(); status("Restored "+stack.length+" versions."); };
+  }
+  function confirmDialog(opts){
+    $("cfTitle").textContent=opts.title||"";
+    $("cfMsg").innerHTML=opts.message||"";
+    const acts=$("cfActions"); acts.innerHTML="";
+    (opts.actions||[]).forEach(a=>{ const btn=document.createElement("button"); btn.className="btn "+(a.cls||""); btn.textContent=a.label; btn.onclick=()=>{ closeConfirm(); if(a.onClick) a.onClick(); }; acts.appendChild(btn); });
+    $("confirm").classList.add("show");
+  }
+  function closeConfirm(){ $("confirm").classList.remove("show"); }
   function removeFile(rec){
     if(!rec) return;
     fileIgnores.add(rec.abs); saveFileIgnores(); applyFilters();
@@ -1417,7 +1444,11 @@
     ctx.querySelector('[data-act=reveal]').onclick=()=>{ hideCtx(); reveal(rec); };
     { const _c=ctx.querySelector('[data-act=compare]'); if(_c) _c.onclick=()=>{ hideCtx(); markCompare(rec); }; }
     ctx.querySelector('[data-act=setartist]').onclick=()=>showArtistEditor(rec,x,y);
-    ctx.querySelector('[data-act=removefile]').onclick=()=>{ hideCtx(); removeFile(rec); };
+    ctx.querySelector('[data-act=removefile]').onclick=()=>{ hideCtx();
+      const _k=groupKey(rec.name); const stack=allFiles.filter(f=>groupKey(f.name)===_k);
+      if(stack.length>1){ confirmDialog({ title:"Remove this song?", message:"This song has <b>"+stack.length+"</b> versions folded together. Remove the whole stack, or just this one file?", actions:[ {label:"Remove all "+stack.length+" versions", cls:"danger", onClick:()=>removeStack(stack)}, {label:"Remove just this file", onClick:()=>removeFile(rec)}, {label:"Cancel", cls:"ghost"} ] }); }
+      else removeFile(rec);
+    };
     { const _cc=ctx.querySelector('[data-act=collection]'); if(_cc) _cc.onclick=()=>showCollectionEditor(rec,x,y); }
     { const _dd=ctx.querySelector('[data-act=details]'); if(_dd) _dd.onclick=()=>{ hideCtx(); openDetail(rec); }; }
     ctx.style.display="block";
@@ -1564,6 +1595,7 @@
   $("rescanBtn").addEventListener("click", ()=>loadAllFolders());
 
   document.addEventListener("keydown",(e)=>{
+    if (e.key==="Escape" && $("confirm").classList.contains("show")){ closeConfirm(); return; }
     if ((e.metaKey||e.ctrlKey) && e.key===","){ e.preventDefault(); openSettings(); return; }
     if (e.key==="Escape" && $("settings").classList.contains("show")){ closeSettings(); return; }
     if ((e.metaKey||e.ctrlKey) && (e.key==="f"||e.key==="F") && !e.shiftKey){ e.preventDefault(); openPalette(); return; }
@@ -1696,6 +1728,7 @@
     else { bfSend({action:"download", tag:b.dataset.ver}); $("updateMsg").textContent="Downloading update\u2026"; btn.disabled=true; }
   });
   if ($("updateLater")) $("updateLater").addEventListener("click", ()=>$("updateBar").classList.remove("show"));
+  { const cb=$("cfBg"); if(cb) cb.addEventListener("click", closeConfirm); }
   window.bfAddFolders = (paths)=>{ const o=$("dropOverlay"); if(o) o.classList.remove("show"); if(DEMO) return; (paths||[]).forEach(p=>p&&addRoot(p)); };
 
   /* ---------- Cmd-F quick-open ---------- */
