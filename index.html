@@ -310,14 +310,14 @@
   #wave{ background:#f0f0f3; border-color:var(--line); }
 
   /* clean stat strip */
-  #stats.stats{ display:inline-flex; flex-wrap:wrap; align-items:stretch; gap:0; background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow-sm); padding:0; overflow:hidden; }
-  #stats .stat{ display:flex; align-items:baseline; gap:7px; padding:10px 18px; background:transparent; border:none; border-radius:0; box-shadow:none; min-width:0; position:relative; }
-  #stats .stat + .stat::before{ content:""; position:absolute; left:0; top:9px; bottom:9px; width:1px; background:var(--line); }
-  #stats .stat .n{ font-family:var(--sans); font-size:16px; font-weight:600; line-height:1; color:var(--ink); letter-spacing:-.015em; font-variant-numeric:tabular-nums; }
+  #stats.stats{ display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 15px; background:transparent; border:none; border-radius:0; box-shadow:none; padding:1px 2px; overflow:visible; }
+  #stats .stat{ display:inline-flex; align-items:baseline; gap:4px; padding:0; background:transparent; border:none; border-radius:0; box-shadow:none; min-width:0; position:relative; }
+  #stats .stat + .stat::before{ display:none; }
+  #stats .stat .n{ font-family:var(--mono); font-size:11.5px; font-weight:600; line-height:1; color:var(--ink-2); letter-spacing:0; font-variant-numeric:tabular-nums; }
   #stats .stat .n.wav{ color:#0a84ff; }
   #stats .stat .n.mp3{ color:#c07d12; }
   #stats .stat .n.star{ color:#f5a623; }
-  #stats .stat .l{ font-family:var(--sans); font-size:12.5px; font-weight:400; text-transform:none; letter-spacing:0; color:var(--ink-2); }
+  #stats .stat .l{ font-family:var(--mono); font-size:9.5px; font-weight:400; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-3); }
 
   /* roots bar */
   .rootsbar{ display:none; flex-wrap:wrap; gap:7px; }
@@ -614,8 +614,7 @@
     .tbtn{ background:#3a3a3c; }
     .tbtn:hover{ border-color:#5b5b60; }
     #wave{ background:#1c1c1e; border-color:var(--line); }
-    #stats.stats{ background:#2c2c2e; }
-    #stats .stat + .stat::before{ background:var(--line); }
+    #stats.stats{ background:transparent; }
     .rootchip{ background:#2c2c2e; }
     .rootchip .x:hover{ background:#4a2622; color:#ff6b5e; }
     #ctxMenu{ background:#2c2c2e; }
@@ -1073,7 +1072,7 @@
   function applyFilters(){
     const terms=ignoreTerms();
     const hide=(f)=>fileIgnores.has(f.abs)||isIgnored(f.path,terms)||inIgnoredFolder(f.abs);
-    $("statHidden").textContent=rawMatches.filter(hide).length;
+    $("statHidden").textContent=rawMatches.filter(hide).length.toLocaleString();
     allFiles=rawMatches.filter(f=>!hide(f));
     render();
   }
@@ -1187,11 +1186,11 @@
     else if (nav.kind==="starred") shown=shown.filter(f=>favs.has(groupKey(f.name)));
     else if (nav.kind==="recent"){ const hs=new Set(playHistory.map(h=>h.abs)); shown=shown.filter(f=>hs.has(f.abs)); }
     const allGroups=groupsOf(allFiles);
-    $("statSongs").textContent=allGroups.length;
-    $("statStar").textContent=allGroups.filter(g=>favs.has(g.key)).length;
-    $("statTotal").textContent=allFiles.length;
-    $("statWav").textContent=allFiles.filter(f=>f.ext==="wav").length;
-    $("statMp3").textContent=allFiles.filter(f=>f.ext==="mp3").length;
+    $("statSongs").textContent=allGroups.length.toLocaleString();
+    $("statStar").textContent=allGroups.filter(g=>favs.has(g.key)).length.toLocaleString();
+    $("statTotal").textContent=allFiles.length.toLocaleString();
+    $("statWav").textContent=allFiles.filter(f=>f.ext==="wav").length.toLocaleString();
+    $("statMp3").textContent=allFiles.filter(f=>f.ext==="mp3").length.toLocaleString();
     $("statSize").textContent=fmtSize(allFiles.reduce((s,f)=>s+(f.size||0),0));
 
     playOrder=[]; navOrder=[]; let html="", count=0; const cmp=cmpBy(sortMode); const artistCount={};
