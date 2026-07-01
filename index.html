@@ -602,6 +602,8 @@
   .deck .reel{ border-radius:12px; }
   #reel::before, .deck .reel::before{ content:none !important; }
   #reel .sf, .deck .reel .sf{ display:none !important; }
+  .empty-actions{ margin-top:16px; }
+  .empty-actions .btn{ font-size:13px; }
   /* ===== dark mode (follows the system appearance) ===== */
   @media (prefers-color-scheme: dark){
     :root{
@@ -1249,11 +1251,15 @@
     const list=$("list"), empty=$("empty");
     if (count===0){
       list.style.display="none"; empty.style.display="block";
-      empty.innerHTML=(nav.kind==="recent")?"Nothing played yet \u2014 songs you audition show up here.":pathFilter
-        ? `No files in \u201c${esc(pathFilter.split("/").pop())}\u201d with the current filters.`
-        : (starredOnly||nav.kind==="starred")
-        ? "No starred songs yet &mdash; tap the &#9734; on a song to keep it close."
+      const anyFilter = !!(pathFilter || q || activeCollection || starredOnly || (nav.kind && nav.kind!=="all"));
+      const msg = (nav.kind==="recent") ? "Nothing played yet \u2014 songs you audition show up here."
+        : pathFilter ? `No songs in \u201c${esc(pathFilter.split("/").pop())}\u201d with the current filters.`
+        : activeCollection ? `This folder is empty \u2014 drag songs onto it in the sidebar to add them.`
+        : (starredOnly||nav.kind==="starred") ? "No starred songs yet &mdash; tap the &#9734; on a song to keep it close."
+        : (nav.kind==="context"||nav.kind==="artist") ? `Nothing here with the current filters.`
         : (q ? `Nothing matches \u201c${esc(q)}\u201d.` : "No <code>.wav</code> / <code>.mp3</code> files found inside a <code>bounce</code> / <code>bounces</code> folder.");
+      empty.innerHTML = msg + (anyFilter ? `<div class="empty-actions"><button class="btn" id="emptyReset">Clear all filters &amp; show everything</button></div>` : "");
+      const er=$("emptyReset"); if(er) er.onclick=()=>{ pathFilter=null; activeCollection=null; starredOnly=false; nav={kind:"all"}; const si=$("search"); if(si) si.value=""; const cs=$("collSel"); if(cs) cs.value=""; renderPathFilterBar(); render(); status(""); };
     } else {
       empty.style.display="none"; list.style.display="flex";
       list.innerHTML=html;
@@ -1264,7 +1270,7 @@
       list.querySelectorAll(".promotebtn").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); const rec=playOrder[+b.dataset.i]; pinnedHeads.set(b.closest("li").dataset.key, rec.abs); savePinned(); render(); status("Made \u201c"+rec.name+"\u201d the main version."); }));
       list.querySelectorAll(".pinclear").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); pinnedHeads.delete(b.dataset.key); savePinned(); render(); }));
       list.querySelectorAll(".cloudbtn").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); prefetch(playOrder[+b.dataset.i]); status("Downloading from the cloud\u2026"); }));
-      list.querySelectorAll(".fpath .crumb").forEach(c=>c.addEventListener("click",e=>{ if(selectMode||e.metaKey||e.ctrlKey) return; e.stopPropagation(); setPathFilter(c.dataset.path||null); }));
+      list.querySelectorAll(".fpath .crumb").forEach(c=>c.addEventListener("click",e=>{ if(selectMode||e.metaKey||e.ctrlKey) return; e.stopPropagation(); const si=$("search"); if(si&&si.value) si.value=""; setPathFilter(c.dataset.path||null); }));
       [...list.querySelectorAll("li.row")].forEach(li=>{
         // capture phase: a ⌘-click (or select-mode click) ANYWHERE on the row selects it —
         // even on the "N older"/star/reveal buttons — so two version-songs always select cleanly.
@@ -1326,7 +1332,7 @@
     $("reel").classList.toggle("spin", !audio.paused && !!currentFile);
   }
 
-  function setPathFilter(dir){ pathFilter=dir||null; renderPathFilterBar(); render(); }
+  function setPathFilter(dir){ pathFilter=dir||null; if(pathFilter){ nav={kind:"all"}; activeCollection=null; const cs=$("collSel"); if(cs) cs.value=""; } renderPathFilterBar(); render(); }
   function renderPathFilterBar(){
     const bar=$("pathFilterBar");
     if (!pathFilter){ bar.classList.remove("show"); bar.innerHTML=""; return; }
@@ -1796,9 +1802,9 @@
     body.querySelectorAll(".sb-art").forEach(el=>el.onclick=()=>sbArt(el.dataset.art,el.dataset.actx));
     body.querySelectorAll(".sb-ctx,.sb-art").forEach(el=>el.addEventListener("contextmenu",e=>{ e.preventDefault(); e.stopPropagation(); sidebarIgnoreMenu(e.clientX,e.clientY,el.dataset.ctx||el.dataset.art); }));
   }
-  function sbNav(kind,value){ nav=value!=null?{kind:kind,value:value}:{kind:kind}; activeCollection=null; const cs=$("collSel"); if(cs) cs.value=""; render(); }
-  function sbArt(a,cx){ nav={kind:"artist",value:a,ctx:cx}; activeCollection=null; const cs=$("collSel"); if(cs) cs.value=""; render(); }
-  function sbColl(id){ activeCollection=id; nav={kind:"all"}; const cs=$("collSel"); if(cs) cs.value=id; render(); }
+  function sbNav(kind,value){ nav=value!=null?{kind:kind,value:value}:{kind:kind}; activeCollection=null; pathFilter=null; const cs=$("collSel"); if(cs) cs.value=""; renderPathFilterBar(); render(); }
+  function sbArt(a,cx){ nav={kind:"artist",value:a,ctx:cx}; activeCollection=null; pathFilter=null; const cs=$("collSel"); if(cs) cs.value=""; renderPathFilterBar(); render(); }
+  function sbColl(id){ activeCollection=id; nav={kind:"all"}; pathFilter=null; const cs=$("collSel"); if(cs) cs.value=id; renderPathFilterBar(); render(); }
   function newFolder(name){ return newCollection(name); }
   function addKeysToCollection(id,keys){ const c=collById(id); if(!c) return 0; let n=0; for(const k of keys){ if(k && c.keys.indexOf(k)<0){ c.keys.push(k); n++; } } if(n) saveCollections(); return n; }
   function deleteFolder(id){ const c=collById(id); if(!c) return; collections=collections.filter(x=>x.id!==id); saveCollections(); if(activeCollection===id){ activeCollection=null; nav={kind:"all"}; const cs=$("collSel"); if(cs) cs.value=""; } buildCollSel(); render(); status("Deleted folder “"+c.name+"”."); }
