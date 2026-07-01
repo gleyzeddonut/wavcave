@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     var server: Process?
     let updateRepo = "gleyzeddonut/bounce-finder"
     var latestTag = ""
+    var latestAssetURL = ""
     var stagedApp: String?
     var didCheckUpdate = false
 
@@ -142,7 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         return true
     }
 
-    // MARK: in-app updates (uses the `gh` CLI, which authenticates from your keychain)
+    // MARK: in-app updates (downloads straight from the public GitHub release — no gh, no auth)
     func webView(_ wv: WKWebView, didFinish nav: WKNavigation!) {
         if !didCheckUpdate { didCheckUpdate = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in self?.checkForUpdate() }
@@ -159,21 +160,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
     @objc func checkForUpdatesMenu() { checkForUpdate(manual: true) }
 
-    func ghPath() -> String? {
-        for p in ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"] {
-            if FileManager.default.isExecutableFile(atPath: p) { return p }
-        }
-        return nil
+    // Fetch bytes from a URL synchronously (used for the GitHub API + asset download).
+    func httpData(_ url: URL, timeout: TimeInterval = 12) -> (code: Int, data: Data?) {
+        var req = URLRequest(url: url); req.timeoutInterval = timeout
+        req.setValue("BounceFinder", forHTTPHeaderField: "User-Agent")
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        let sem = DispatchSemaphore(value: 0)
+        var code = 0; var out: Data?
+        URLSession.shared.dataTask(with: req) { d, resp, _ in
+            if let h = resp as? HTTPURLResponse { code = h.statusCode }
+            out = d; sem.signal()
+        }.resume()
+        _ = sem.wait(timeout: .now() + timeout + 2)
+        return (code, out)
     }
-    @discardableResult
-    func gh(_ args: [String]) -> (code: Int32, out: String) {
-        guard let g = ghPath() else { return (127, "") }
-        let p = Process(); p.executableURL = URL(fileURLWithPath: g); p.arguments = args
-        let out = Pipe(); p.standardOutput = out; p.standardError = Pipe()
-        do { try p.run() } catch { return (1, "") }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+    // Download a file (follows redirects to GitHub's asset CDN) to a local path.
+    func httpDownload(_ url: URL, toPath path: String) -> Bool {
+        var req = URLRequest(url: url); req.timeoutInterval = 300
+        req.setValue("BounceFinder", forHTTPHeaderField: "User-Agent")
+        let sem = DispatchSemaphore(value: 0)
+        var ok = false
+        URLSession.shared.downloadTask(with: req) { tmp, resp, _ in
+            if let h = resp as? HTTPURLResponse, h.statusCode == 200, let tmp = tmp {
+                let fm = FileManager.default
+                try? fm.removeItem(atPath: path)
+                do { try fm.moveItem(at: tmp, to: URL(fileURLWithPath: path)); ok = true } catch {}
+            }
+            sem.signal()
+        }.resume()
+        _ = sem.wait(timeout: .now() + 320)
+        return ok
     }
     func currentVersion() -> String { (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0" }
     func verParts(_ s: String) -> [Int] {
@@ -198,14 +214,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     func checkForUpdate(manual: Bool = false) {
         DispatchQueue.global().async {
-            let r = self.gh(["release", "view", "--repo", self.updateRepo, "--json", "tagName,body"])
-            guard r.code == 0, let d = r.out.data(using: .utf8),
+            let url = URL(string: "https://api.github.com/repos/\(self.updateRepo)/releases/latest")!
+            let r = self.httpData(url)
+            guard r.code == 200, let d = r.data,
                   let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-                  let tag = j["tagName"] as? String, !tag.isEmpty else {
+                  let tag = j["tag_name"] as? String, !tag.isEmpty else {
                 if manual { self.web("window.bfUpdateNone&&window.bfUpdateNone(false)") }
                 return
             }
             let notes = (j["body"] as? String) ?? ""
+            if let assets = j["assets"] as? [[String: Any]],
+               let zip = assets.first(where: { ($0["name"] as? String)?.hasSuffix(".zip") == true }),
+               let u = zip["browser_download_url"] as? String {
+                self.latestAssetURL = u
+            } else {
+                self.latestAssetURL = ""
+            }
             if self.isNewer(tag, than: self.currentVersion()) {
                 self.latestTag = tag
                 self.web("window.bfUpdate&&window.bfUpdate(\(self.jsStr(tag)),\(self.jsStr(notes)))")
@@ -220,14 +244,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             let fm = FileManager.default, dir = self.updateDir()
             try? fm.removeItem(atPath: dir)
             try? fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
-            let r = self.gh(["release", "download", tag, "--repo", self.updateRepo, "--pattern", "*.zip", "--dir", dir, "--clobber"])
-            guard r.code == 0,
-                  let zip = (try? fm.contentsOfDirectory(atPath: dir))?.first(where: { $0.hasSuffix(".zip") }) else {
+            // Prefer the asset URL from the API; fall back to the conventional public download path.
+            var assetStr = self.latestAssetURL
+            if assetStr.isEmpty {
+                let v = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+                assetStr = "https://github.com/\(self.updateRepo)/releases/download/\(tag)/BounceFinder-\(v).zip"
+            }
+            let zipPath = dir + "/update.zip"
+            guard let assetURL = URL(string: assetStr), self.httpDownload(assetURL, toPath: zipPath) else {
                 self.web("window.bfUpdateError&&window.bfUpdateError()"); return
             }
             let unpack = dir + "/unpacked"
             try? fm.removeItem(atPath: unpack); try? fm.createDirectory(atPath: unpack, withIntermediateDirectories: true)
-            let dt = Process(); dt.executableURL = URL(fileURLWithPath: "/usr/bin/ditto"); dt.arguments = ["-x", "-k", dir + "/" + zip, unpack]
+            let dt = Process(); dt.executableURL = URL(fileURLWithPath: "/usr/bin/ditto"); dt.arguments = ["-x", "-k", zipPath, unpack]
             do { try dt.run(); dt.waitUntilExit() } catch {}
             guard let appName = (try? fm.contentsOfDirectory(atPath: unpack))?.first(where: { $0.hasSuffix(".app") }) else {
                 self.web("window.bfUpdateError&&window.bfUpdateError()"); return

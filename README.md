@@ -30,5 +30,7 @@ This bumps the version, builds + signs, zips the app, tags `v1.1`, pushes, and
 creates the GitHub release with the zip attached. Running copies of the app check
 this repo's latest release on launch and offer an in-app **Update**.
 
-Updates are fetched with the `gh` CLI, which authenticates from your keychain — so
-the repo can stay private.
+Updates download straight from the public GitHub release over HTTPS (no `gh`, no
+sign-in needed on the user's machine). `release.sh` also notarizes and staples the
+build (via the `bouncefinder-notary` keychain profile) so it opens with a plain
+double-click on any Mac.
