@@ -676,7 +676,6 @@
       <div class="stat"><div class="n mp3" id="statMp3">0</div><div class="l">MP3</div></div>
       <div class="stat"><div class="n" id="statSize">0</div><div class="l">Size</div></div>
       <div class="stat"><div class="n star" id="statStar">0</div><div class="l">Starred</div></div>
-      <div class="stat"><div class="n" id="statHidden">0</div><div class="l">Ignored</div></div>
     </div>
     <div class="cloudbar" id="cloudBar"></div>
     <div class="selbar" id="selBar"></div>
@@ -1072,7 +1071,6 @@
   function applyFilters(){
     const terms=ignoreTerms();
     const hide=(f)=>fileIgnores.has(f.abs)||isIgnored(f.path,terms)||inIgnoredFolder(f.abs);
-    $("statHidden").textContent=rawMatches.filter(hide).length.toLocaleString();
     allFiles=rawMatches.filter(f=>!hide(f));
     render();
   }
