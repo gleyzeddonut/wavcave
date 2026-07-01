@@ -1475,7 +1475,8 @@
     const dur=(!DEMO&&audio.duration)?audio.duration:demoDur;
     const cur=(!DEMO?audio.currentTime:demoTime);
     $("counter").textContent=fmtTime(cur)+" / "+fmtTime(dur);
-    renderWave();
+    const now=performance.now();                    // cap the waveform playhead redraw at ~30fps
+    if(!updateCounter._t || now-updateCounter._t>=33){ updateCounter._t=now; renderWave(); }
   }
 
   /* ---------- demo playback sim ---------- */
@@ -1501,7 +1502,8 @@
   $("pickBtn").addEventListener("click", pick);
   $("pickBtn2").addEventListener("click", pick);
   let _searchT; $("search").addEventListener("input", ()=>{ clearTimeout(_searchT); _searchT=setTimeout(render, 180); });
-  $("ignore").addEventListener("input", ()=>{ saveSettings(); applyFilters(); });
+  let _ignoreT=0;
+  $("ignore").addEventListener("input", ()=>{ saveSettings(); clearTimeout(_ignoreT); _ignoreT=setTimeout(applyFilters,180); });   // debounce so a 9k-file library isn't re-filtered on every keystroke
   $("expandBtn").addEventListener("click", ()=>{
     const groups=groupsOf(allFiles).filter(g=>g.versions.length);
     const allOpen=groups.length && groups.every(g=>expanded.has(g.key));
