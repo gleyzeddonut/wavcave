@@ -155,6 +155,9 @@
   }
   .row.version .play{width:28px; height:28px;}
   .row.playing .play{background:linear-gradient(#bd5a3f,#9c3f27); border-color:#8a3520; color:#fbf3e6;}
+  .play{cursor:pointer;}
+  .play:hover{transform:scale(1.07);}
+  .play:active{transform:scale(.96);}
   .play svg{display:block;}
 
   .tag{font-family:var(--mono); font-size:9.5px; font-weight:700; letter-spacing:.05em; padding:4px 7px; border-radius:6px; flex-shrink:0; border:1px solid transparent;}
@@ -578,7 +581,8 @@
   #settings .set-bg{ position:absolute; inset:0; background:rgba(0,0,0,.28); }
   .set-box{ position:absolute; top:0; right:0; bottom:0; width:min(500px,94vw); background:var(--card); border-left:1px solid var(--line-2); box-shadow:-16px 0 48px -18px rgba(0,0,0,.45); overflow-y:auto; padding:22px 22px 30px; }
   .set-close{ position:absolute; top:14px; right:14px; width:28px; height:28px; border-radius:50%; border:1px solid var(--line-2); background:var(--inset); color:var(--ink-2); cursor:pointer; }
-  .set-title{ font-size:20px; font-weight:700; letter-spacing:-.01em; margin:0 0 4px; padding-right:34px; color:var(--ink); }
+  .set-title{ font-size:20px; font-weight:700; letter-spacing:-.01em; margin:0 0 14px; padding-right:34px; color:var(--ink); }
+  .set-sec-title{ font-family:var(--sans); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-3); margin:0 0 7px; }
   .set-sub{ font-size:13px; line-height:1.5; color:var(--ink-2); margin:0 0 18px; }
   .set-note{ font-size:12px; color:var(--ink-3); margin-top:14px; line-height:1.5; }
   /* ===== dark mode (follows the system appearance) ===== */
@@ -667,9 +671,6 @@
         <button class="toggle" id="starTog" aria-pressed="false"><span class="sf sf-starfill star"></span>Starred</button>
       </div>
       <button class="btn ghost" id="expandBtn">Expand all</button>
-      <button class="btn ghost" id="foldersBtn"><span class="sf sf-folder"></span>Folders</button>
-      <button class="btn ghost" id="filtersBtn"><span class="sf sf-filters"></span>Filters</button>
-      <button class="btn ghost" id="combineBtn" title="Combine different versions of the same song that weren't grouped automatically"><span class="sf sf-merge"></span>Combine</button>
       <label class="sortsel"><span class="sl">Show</span><select id="collSel"><option value="">All songs</option></select></label>
       <label class="sortsel"><span class="sl">Sort</span><select id="sortSel"><option value="name">Name</option><option value="artist">Artist</option><option value="context">Context</option><option value="recent">Recent</option></select></label>
     </div>
@@ -702,19 +703,6 @@
   <div id="mainRow"><aside id="sidebar"><div id="sbBody"></div></aside>
   <div class="scroll" id="scroll">
     <div class="wrap">
-      <div class="panels" id="panels">
-        <div class="panel" id="filtersPanel">
-          <div class="ptitle">Ignore folders &amp; filter</div>
-          <label class="fl" for="ignore">Skip files inside folders named (comma-separated)</label>
-          <input id="ignore" type="text" value="samples, processed, stem" />
-          <div class="hint">Skips any file whose path passes through a folder whose name <em>contains</em> one of these &mdash; so <code>stem</code> also catches <code>stems</code> and <code>GoodCryStems</code>.</div>
-        </div>
-        <div class="panel" id="foldersPanel">
-          <div class="ptitle">Folders &mdash; tick to ignore one and everything inside it</div>
-          <div id="tree"></div>
-        </div>
-      </div>
-
       <div class="pathfilter" id="pathFilterBar"></div>
       <ul id="list"></ul>
       <div class="empty" id="empty"></div>
@@ -798,11 +786,15 @@
   <div id="ctxMenu"></div>
   <div id="detail"><div class="dt-bg" id="dtBg"></div><div class="dt-box"><button class="dt-close" id="dtClose">✕</button><div id="dtBody"></div></div></div>
   <div id="settings"><div class="set-bg" id="setBg"></div><div class="set-box"><button class="set-close" id="setClose">✕</button>
-    <h2 class="set-title">Folder keywords</h2>
+    <h2 class="set-title">Settings</h2>
+    <div class="set-sec-title">Bounce folder keywords</div>
     <p class="set-sub">Folders with these names are treated as bounce folders. Turn on <b>match plural</b> to also catch the plural (bounce → bounces), or <b>case-sensitive</b> to match capitalization exactly.</p>
     <div class="kw-list" id="settingsKw"></div>
-    <button class="btn primary" id="setRescan" style="margin-top:18px;"><span class="sf sf-rescan"></span>Rescan now</button>
-    <p class="set-note">Changes apply on your next scan. Closing this panel rescans automatically if you changed anything.</p>
+    <button class="btn primary" id="setRescan" style="margin-top:16px;"><span class="sf sf-rescan"></span>Rescan now</button>
+    <div class="set-sec-title" style="margin-top:26px;">Ignored folders</div>
+    <p class="set-sub">Skip any file inside a folder whose name <em>contains</em> one of these tags (comma-separated) &mdash; so <code>stem</code> also catches <code>stems</code> and <code>GoodCryStems</code>. Applies instantly.</p>
+    <input id="ignore" class="kw-word" style="width:100%;" spellcheck="false" autocapitalize="off" autocomplete="off" type="text" value="samples, processed, stem" />
+    <p class="set-note">Tip: right-click any folder in the left sidebar to add it here.</p>
   </div></div>
   <div id="dropOverlay"><div class="box"><span class="sf sf-folderplus"></span>Drop a folder to add it</div></div>
   <div id="palette"><div class="pal-box">
@@ -982,7 +974,8 @@
     return html;
   }
   function renderFolderTree(){
-    const t=$("tree"); t.innerHTML=treeNodeHtml(buildTree(rawMatches));
+    const t=$("tree"); if(!t) return;   // folder-ignore panel retired; folders are now ignored via sidebar right-click
+    t.innerHTML=treeNodeHtml(buildTree(rawMatches));
     t.querySelectorAll("label.tree-row").forEach(l=>l.addEventListener("click",e=>e.stopPropagation()));
     t.querySelectorAll("input[type=checkbox]").forEach(cb=>cb.addEventListener("change",()=>{
       cb.checked?folderIgnores.add(cb.dataset.path):folderIgnores.delete(cb.dataset.path);
@@ -1259,11 +1252,17 @@
         li.addEventListener("click",e=>{
           if (selectMode||e.metaKey||e.ctrlKey){ e.preventDefault(); e.stopPropagation(); const k=li.dataset.key; if(k){ selected.has(k)?selected.delete(k):selected.add(k); selExplicit=true; updateSelectionUI(); } }
         }, true);
-        li.addEventListener("click",e=>{   // plain click = play + arm this row as the combine anchor
+        li.addEventListener("click",e=>{   // plain click = arm this row as the combine anchor (play is the ▶ button only)
           if (selectMode||e.metaKey||e.ctrlKey) return;   // already handled in capture
           const k=li.dataset.key;
           selected.clear(); if(k) selected.add(k); selExplicit=false; updateSelectionUI();
-          play(playOrder[+li.dataset.i]);
+        });
+        const pb=li.querySelector(".play");
+        if (pb) pb.addEventListener("click",e=>{
+          e.stopPropagation();
+          const rec=playOrder[+li.dataset.i];
+          if (rec===currentFile && !DEMO){ if(audio.paused) audio.play().catch(()=>{}); else audio.pause(); }
+          else play(rec);
         });
         li.addEventListener("contextmenu",e=>{ e.preventDefault(); showCtx(e.clientX,e.clientY,playOrder[+li.dataset.i]); });
         li.addEventListener("mouseenter",()=>prefetch(playOrder[+li.dataset.i]));
@@ -1517,15 +1516,13 @@
     expanded.clear(); if(!allOpen) groups.forEach(g=>expanded.add(g.key));
     $("expandBtn").textContent=allOpen?"Expand all":"Collapse all"; render();
   });
-  $("combineBtn").addEventListener("click", ()=>{ selectMode=!selectMode; if(!selectMode){ selected.clear(); selExplicit=false; } updateSelectionUI(); });
   $("sortSel").addEventListener("change", ()=>{ sortMode=$("sortSel").value; saveSettings(); render(); });
   $("collSel").addEventListener("change", ()=>{ activeCollection=$("collSel").value||null; render(); });
-  $("foldersBtn").addEventListener("click", ()=>{ togglePanel("foldersPanel","foldersBtn"); });
-  $("filtersBtn").addEventListener("click", ()=>{ togglePanel("filtersPanel","filtersBtn"); });
-  function togglePanel(pid,bid){ const p=$(pid); const on=!p.classList.contains("open"); $("foldersPanel").classList.remove("open"); $("filtersPanel").classList.remove("open"); $("foldersBtn").setAttribute("aria-pressed","false"); $("filtersBtn").setAttribute("aria-pressed","false"); if(on){ p.classList.add("open"); $(bid).setAttribute("aria-pressed","true"); } }
   $("rescanBtn").addEventListener("click", ()=>loadAllFolders());
 
   document.addEventListener("keydown",(e)=>{
+    if ((e.metaKey||e.ctrlKey) && e.key===","){ e.preventDefault(); openSettings(); return; }
+    if (e.key==="Escape" && $("settings").classList.contains("show")){ closeSettings(); return; }
     if ((e.metaKey||e.ctrlKey) && (e.key==="f"||e.key==="F") && !e.shiftKey){ e.preventDefault(); openPalette(); return; }
     if (e.target.tagName==="INPUT") return;
     if (inCompare()){
@@ -1758,10 +1755,28 @@
     body.querySelectorAll(".sb-tw").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); const cx=el.dataset.tw; openCtx.has(cx)?openCtx.delete(cx):openCtx.add(cx); renderSidebar(); });
     body.querySelectorAll(".sb-ctx").forEach(el=>el.onclick=()=>sbNav("context",el.dataset.ctx));
     body.querySelectorAll(".sb-art").forEach(el=>el.onclick=()=>sbArt(el.dataset.art,el.dataset.actx));
+    body.querySelectorAll(".sb-ctx,.sb-art").forEach(el=>el.addEventListener("contextmenu",e=>{ e.preventDefault(); e.stopPropagation(); sidebarIgnoreMenu(e.clientX,e.clientY,el.dataset.ctx||el.dataset.art); }));
   }
   function sbNav(kind,value){ nav=value!=null?{kind:kind,value:value}:{kind:kind}; activeCollection=null; const cs=$("collSel"); if(cs) cs.value=""; render(); }
   function sbArt(a,cx){ nav={kind:"artist",value:a,ctx:cx}; activeCollection=null; const cs=$("collSel"); if(cs) cs.value=""; render(); }
   function sbColl(id){ activeCollection=id; nav={kind:"all"}; const cs=$("collSel"); if(cs) cs.value=id; render(); }
+  function ignoreLabel(name){
+    if(!name || name==="Uncategorized" || name==="Unknown artist") return;
+    const inp=$("ignore"); if(!inp) return;
+    const cur=inp.value.split(",").map(t=>t.trim()).filter(Boolean);
+    if(!cur.some(t=>t.toLowerCase()===name.toLowerCase())){ cur.push(name); inp.value=cur.join(", "); saveSettings(); }
+    applyFilters();
+    status("Ignoring “"+name+"” — manage under Settings → Ignored folders.");
+  }
+  function sidebarIgnoreMenu(x,y,label){
+    if(!label) return;
+    const ctx=$("ctxMenu");
+    ctx.innerHTML=`<div class="ctx-item" data-ig><span class="sf sf-filters"></span>Ignore “${esc(label)}”</div>`;
+    const it=ctx.querySelector("[data-ig]"); if(it) it.onclick=()=>{ hideCtx(); ignoreLabel(label); };
+    ctx.style.display="block";
+    ctx.style.left=Math.min(x,window.innerWidth-ctx.offsetWidth-8)+"px";
+    ctx.style.top=Math.min(y,window.innerHeight-ctx.offsetHeight-8)+"px";
+  }
 
   /* ---------- sonar scan loader controller ---------- */
   const BounceScan = {
