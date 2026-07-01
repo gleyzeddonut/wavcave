@@ -352,6 +352,10 @@
   /* clickable path */
   .fpath.click{ cursor:pointer; }
   .fpath.click:hover{ color:#0a84ff; }
+  .fpath .fp-in{ direction:ltr; unicode-bidi:isolate; }
+  .fpath .crumb{ cursor:pointer; border-radius:3px; }
+  .fpath .crumb:hover{ color:#0a84ff; text-decoration:underline; }
+  .fpath .cbsep{ opacity:.4; margin:0 4px; }
 
   /* path filter chip */
   .pathfilter{ display:none; margin-bottom:12px; }
@@ -1132,10 +1136,19 @@
   }
 
   /* ---------- render ---------- */
+  // Render a folder path as a row of individually-clickable breadcrumb segments;
+  // clicking a segment filters the list to that folder (and everything inside it).
+  function pathCrumbs(dir){
+    const parts=(dir||"").split("/").filter(Boolean);
+    if(!parts.length) return '<span class="crumb" data-path="">/</span>';
+    let acc="";
+    return parts.map((seg,i)=>{ acc = i ? acc+"/"+seg : seg; return `<span class="crumb" data-path="${esc(acc)}" title="Show only ${esc(seg)}/">${esc(seg)}</span>`; }).join('<span class="cbsep">/</span>');
+  }
   function rowHtml(f,i,versionCount,open,isHead,key,combined,pinned){
     const dir=f.path.slice(0,f.path.length-f.name.length).replace(/\/$/,"");
     const display=isHead ? titleCase(songKeyDisplay(f.name)) : f.name;
-    const sub = isHead ? esc(f.name)+"  \u00b7  "+esc(dir||"/") : esc(dir||"/");
+    const crumbs = pathCrumbs(dir);
+    const sub = isHead ? esc(f.name)+'<span class="cbsep">\u00b7</span>'+crumbs : crumbs;
     const trail=(isHead&&versionCount>0)?`<button class="vtoggle ${open?"open":""}" data-key="${esc(key)}"><span class="sf sf-chev"></span>${versionCount} older</button>`:"";
     const linkBadge=(isHead&&combined)?`<span class="badge link" title="Manually combined \u2014 select &amp; press \u2318J to split"><span class="sf sf-merge"></span>linked</span>`:"";
     const pinBadge=(isHead&&pinned)?`<button class="badge pin pinclear" data-key="${esc(key)}" title="You chose this as the main version \u2014 click to go back to the newest"><span class="sf sf-pinfill"></span>pinned</button>`:"";
@@ -1148,7 +1161,7 @@
     return `<li class="row ${isHead?"":"version"}" data-i="${i}" data-key="${esc(key||"")}" draggable="true">
       <div class="play"><span class="sf sf-play"></span></div>
       <span class="tag ${f.ext}">${f.ext.toUpperCase()}</span>${mchips}
-      <div class="file"><div class="fname">${esc(display)}${linkBadge}${pinBadge}</div><div class="fpath click" title="Show only this folder">${sub}</div></div>
+      <div class="file"><div class="fname">${esc(display)}${linkBadge}${pinBadge}</div><div class="fpath"><span class="fp-in">${sub}</span></div></div>
       ${trail}
       <div class="meta"><div class="date">${fmtDate(f.mtime)}</div><div class="fsize">${fmtSize(f.size)}</div></div>
       ${cloud}${rightSlot}
@@ -1241,7 +1254,7 @@
       list.querySelectorAll(".promotebtn").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); const rec=playOrder[+b.dataset.i]; pinnedHeads.set(b.closest("li").dataset.key, rec.abs); savePinned(); render(); status("Made \u201c"+rec.name+"\u201d the main version."); }));
       list.querySelectorAll(".pinclear").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); pinnedHeads.delete(b.dataset.key); savePinned(); render(); }));
       list.querySelectorAll(".cloudbtn").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); prefetch(playOrder[+b.dataset.i]); status("Downloading from the cloud\u2026"); }));
-      list.querySelectorAll(".fpath.click").forEach(p=>p.addEventListener("click",e=>{ if(selectMode||e.metaKey||e.ctrlKey) return; e.stopPropagation(); const rec=playOrder[+p.closest("li").dataset.i]; setPathFilter(rec.path.slice(0,rec.path.length-rec.name.length).replace(/\/$/,"")); }));
+      list.querySelectorAll(".fpath .crumb").forEach(c=>c.addEventListener("click",e=>{ if(selectMode||e.metaKey||e.ctrlKey) return; e.stopPropagation(); setPathFilter(c.dataset.path||null); }));
       [...list.querySelectorAll("li.row")].forEach(li=>{
         // capture phase: a ⌘-click (or select-mode click) ANYWHERE on the row selects it —
         // even on the "N older"/star/reveal buttons — so two version-songs always select cleanly.
