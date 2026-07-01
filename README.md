@@ -1,4 +1,4 @@
-# Bounce Finder
+# WavCave
 
 A native macOS app that surfaces every bounced `.wav` / `.mp3` sitting inside a
 `bounces` folder across your project folders — group versions, audition with a
@@ -10,14 +10,14 @@ machine (a tiny local Python server does the scanning; a WKWebView shows the UI)
 - `server.py` — the local backend (scan, stream, peaks, durable settings).
 - `native/` — the standalone macOS app wrapper.
   - `main.swift` — the WKWebView app (starts the backend, in-app updater).
-  - `build.sh` — compiles + assembles + signs `Bounce Finder.app`.
+  - `build.sh` — compiles + assembles + signs `WavCave.app`.
   - `release.sh` — bumps the version, builds, and publishes a GitHub release.
   - `Info.plist`, `appicon.icns`.
 
 ## Build
 ```sh
 ./native/build.sh
-# then copy "Bounce Finder.app" to /Applications
+# then copy "WavCave.app" to /Applications
 ```
 If a `Developer ID Application` certificate is in your keychain, `build.sh` signs
 with it automatically (otherwise it falls back to ad-hoc).

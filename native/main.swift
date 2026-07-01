@@ -1,4 +1,4 @@
-// Bounce Finder — native standalone macOS app.
+// WavCave — native standalone macOS app.
 // A WKWebView window that starts the bundled Python backend, then loads the UI
 // from http://127.0.0.1:8765. No browser involved: own Dock icon, own ⌘Q.
 
@@ -43,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     var window: NSWindow!
     var webView: WKWebView!
     var server: Process?
-    let updateRepo = "gleyzeddonut/bounce-finder"
+    let updateRepo = "gleyzeddonut/wavcave"
     var latestTag = ""
     var latestAssetURL = ""
     var stagedApp: String?
@@ -73,8 +73,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         window = NSWindow(contentRect: frame,
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)
-        window.title = "Bounce Finder"
-        window.setFrameAutosaveName("BounceFinderMainWindow")
+        window.title = "WavCave"
+        window.setFrameAutosaveName("WavCaveMainWindow")
         window.minSize = NSSize(width: 720, height: 480)
         window.contentView = webView
         window.center()
@@ -130,7 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         var env = ProcessInfo.processInfo.environment
         env["BF_PORT"] = String(PORT)
         p.environment = env
-        do { try p.run(); server = p } catch { NSLog("Bounce Finder: backend failed to start: \(error)") }
+        do { try p.run(); server = p } catch { NSLog("WavCave: backend failed to start: \(error)") }
     }
 
     // MARK: lifecycle
@@ -163,7 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     // Fetch bytes from a URL synchronously (used for the GitHub API + asset download).
     func httpData(_ url: URL, timeout: TimeInterval = 12) -> (code: Int, data: Data?) {
         var req = URLRequest(url: url); req.timeoutInterval = timeout
-        req.setValue("BounceFinder", forHTTPHeaderField: "User-Agent")
+        req.setValue("WavCave", forHTTPHeaderField: "User-Agent")
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         let sem = DispatchSemaphore(value: 0)
         var code = 0; var out: Data?
@@ -177,7 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     // Download a file (follows redirects to GitHub's asset CDN) to a local path.
     func httpDownload(_ url: URL, toPath path: String) -> Bool {
         var req = URLRequest(url: url); req.timeoutInterval = 300
-        req.setValue("BounceFinder", forHTTPHeaderField: "User-Agent")
+        req.setValue("WavCave", forHTTPHeaderField: "User-Agent")
         let sem = DispatchSemaphore(value: 0)
         var ok = false
         URLSession.shared.downloadTask(with: req) { tmp, resp, _ in
@@ -210,7 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         return String(arr.dropFirst().dropLast())
     }
     func web(_ js: String) { DispatchQueue.main.async { self.webView.evaluateJavaScript(js, completionHandler: nil) } }
-    func updateDir() -> String { NSString(string: "~/Library/Application Support/BounceFinder/update").expandingTildeInPath }
+    func updateDir() -> String { NSString(string: "~/Library/Application Support/WavCave/update").expandingTildeInPath }
 
     func checkForUpdate(manual: Bool = false) {
         DispatchQueue.global().async {
@@ -248,7 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             var assetStr = self.latestAssetURL
             if assetStr.isEmpty {
                 let v = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
-                assetStr = "https://github.com/\(self.updateRepo)/releases/download/\(tag)/BounceFinder-\(v).zip"
+                assetStr = "https://github.com/\(self.updateRepo)/releases/download/\(tag)/WavCave-\(v).zip"
             }
             let zipPath = dir + "/update.zip"
             guard let assetURL = URL(string: assetStr), self.httpDownload(assetURL, toPath: zipPath) else {
@@ -269,7 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         guard let staged = stagedApp else { return }
         let dest = Bundle.main.bundlePath
         let pid = ProcessInfo.processInfo.processIdentifier
-        let sp = NSString(string: "~/Library/Application Support/BounceFinder/swap.sh").expandingTildeInPath
+        let sp = NSString(string: "~/Library/Application Support/WavCave/swap.sh").expandingTildeInPath
         let script = """
         #!/bin/sh
         while kill -0 \(pid) 2>/dev/null; do sleep 0.3; done
@@ -293,16 +293,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
         let appItem = NSMenuItem(); mainMenu.addItem(appItem)
         let appMenu = NSMenu(); appItem.submenu = appMenu
-        appMenu.addItem(withTitle: "About Bounce Finder", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "About WavCave", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
         let upd = appMenu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdatesMenu), keyEquivalent: "")
         upd.target = self
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide Bounce Finder", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "Hide WavCave", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let others = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         others.keyEquivalentModifierMask = [.command, .option]
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit Bounce Finder", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit WavCave", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         let editItem = NSMenuItem(); mainMenu.addItem(editItem)
         let editMenu = NSMenu(title: "Edit"); editItem.submenu = editMenu

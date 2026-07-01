@@ -1,20 +1,20 @@
 #!/bin/bash
-# Builds "Bounce Finder.app" — the native standalone macOS app.
+# Builds "WavCave.app" — the native standalone macOS app.
 # Run from anywhere; paths are resolved relative to this script.
 set -e
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"          # project root (holds index.html, server.py, …)
-OUT="$ROOT/Bounce Finder.app"
+OUT="$ROOT/WavCave.app"
 
 echo "Compiling…"
-xcrun swiftc -O "$HERE/main.swift" -o "$HERE/BounceFinder" -framework Cocoa -framework WebKit
+xcrun swiftc -O "$HERE/main.swift" -o "$HERE/WavCave" -framework Cocoa -framework WebKit
 
 echo "Assembling bundle…"
 rm -rf "$OUT"
 mkdir -p "$OUT/Contents/MacOS" "$OUT/Contents/Resources"
-mv "$HERE/BounceFinder" "$OUT/Contents/MacOS/BounceFinder"
-chmod +x "$OUT/Contents/MacOS/BounceFinder"
+mv "$HERE/WavCave" "$OUT/Contents/MacOS/WavCave"
+chmod +x "$OUT/Contents/MacOS/WavCave"
 
 # Icon: prefer an existing .icns, else fall back to the 512 PNG via iconutil.
 if [ -f "$HERE/appicon.icns" ]; then
@@ -38,8 +38,8 @@ if [ -n "$SIGN_ID" ]; then
   codesign --force --deep --options runtime --timestamp --sign "$SIGN_ID" "$OUT" || \
     { echo "Developer ID signing failed; falling back to ad-hoc."; codesign --force --deep --sign - "$OUT"; }
   echo "To remove the Gatekeeper prompt for distribution, notarize it:"
-  echo "  ditto -c -k --keepParent \"$OUT\" /tmp/BounceFinder.zip"
-  echo "  xcrun notarytool submit /tmp/BounceFinder.zip --apple-id <you@apple.id> --team-id <TEAMID> --password <app-specific-pw> --wait"
+  echo "  ditto -c -k --keepParent \"$OUT\" /tmp/WavCave.zip"
+  echo "  xcrun notarytool submit /tmp/WavCave.zip --apple-id <you@apple.id> --team-id <TEAMID> --password <app-specific-pw> --wait"
   echo "  xcrun stapler staple \"$OUT\""
 else
   echo "Signing (ad-hoc — no Developer ID found; first launch needs right-click → Open once)…"
