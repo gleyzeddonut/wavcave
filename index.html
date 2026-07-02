@@ -32,7 +32,6 @@
     flex-shrink:0; display:flex; align-items:center; gap:18px;
     padding:14px 22px; background:linear-gradient(#f4ecda,#ece1cb);
     border-bottom:1px solid var(--line-2);
-    box-shadow:0 1px 0 rgba(255,255,255,.6) inset, 0 6px 18px -14px rgba(60,45,25,.5);
   }
   .brand{display:flex; align-items:center; gap:13px; min-width:0;}
   .reel{
@@ -52,7 +51,7 @@
     display:none; align-items:center; gap:8px; max-width:340px;
     font-family:var(--mono); font-size:11.5px; color:var(--ink-2);
     background:var(--inset); border:1px solid var(--line-2); border-radius:8px; padding:6px 10px;
-    box-shadow:0 1px 1px rgba(60,45,25,.06) inset;
+    box-shadow:0 1px 1px rgba(0,0,0,.05) inset;
   }
   .pathchip .p{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:rtl; text-align:left;}
   .pathchip .dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0;box-shadow:0 0 0 2px rgba(105,120,65,.2);}
@@ -65,7 +64,7 @@
     transition:transform .04s, box-shadow .12s, border-color .12s; white-space:nowrap; line-height:1;
   }
   .btn:hover{border-color:#b6a983;}
-  .btn:active{transform:translateY(1px); box-shadow:0 1px 1px rgba(60,45,25,.15) inset;}
+  .btn:active{transform:translateY(1px); box-shadow:0 1px 1px rgba(0,0,0,.12) inset;}
   .btn.primary{color:#fbf3e6; background:linear-gradient(#bd5a3f,#9c3f27); border-color:#8a3520; text-shadow:0 1px 0 rgba(0,0,0,.18);}
   .btn.primary:hover{border-color:#7a2c18;}
   .btn.ghost{background:transparent; box-shadow:none; border-color:transparent; color:var(--ink-2); padding:8px 10px;}
@@ -73,25 +72,18 @@
   .btn .ic{margin-right:6px; opacity:.8;}
 
   /* ---------- toolbar ---------- */
-  .toolbar{flex-shrink:0; display:none; flex-direction:column; gap:12px; padding:14px 22px 10px; border-bottom:1px solid var(--line); background:rgba(245,237,220,.5);}
+  .toolbar{flex-shrink:0; display:none; flex-direction:column; gap:12px; padding:14px 22px 10px; border-bottom:1px solid var(--line); background:transparent;}
   .toolrow{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
   .search{position:relative; flex:1; min-width:240px;}
   .search svg{position:absolute; left:13px; top:50%; transform:translateY(-50%); color:var(--ink-3);}
   .search input{
     width:100%; font-family:var(--sans); font-size:15px; color:var(--ink);
     background:var(--surface); border:1px solid var(--line-2); border-radius:11px;
-    padding:11px 46px 11px 38px; box-shadow:0 1px 2px rgba(60,45,25,.06) inset;
+    padding:11px 46px 11px 38px; box-shadow:0 1px 2px rgba(0,0,0,.05) inset;
   }
   .search input::placeholder{color:var(--ink-2);}
   .search input:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(168,73,47,.12);}
 
-  .seg{display:inline-flex; background:var(--inset); border:1px solid var(--line-2); border-radius:10px; padding:3px; gap:2px; box-shadow:0 1px 1px rgba(60,45,25,.06) inset;}
-  .toggle{
-    font-family:var(--sans); font-size:12.5px; font-weight:600; color:var(--ink-2);
-    background:transparent; border:none; border-radius:7px; padding:7px 12px; cursor:pointer; display:flex; align-items:center; gap:6px; white-space:nowrap;
-  }
-  .toggle[aria-pressed="true"]{background:linear-gradient(#fbf6ea,#f2e9d6); color:var(--ink); box-shadow:var(--shadow-sm);}
-  .toggle .star{color:var(--amber);}
 
   .stats{display:flex; gap:7px; flex-wrap:wrap; align-items:stretch;}
   .stat{
@@ -138,7 +130,7 @@
 
   .file{min-width:0; flex:1;}
   .fname{font-family:var(--display); font-size:16px; font-weight:600; color:var(--ink); line-height:1.25; word-break:break-word;}
-  .row.version .fname{font-size:14.5px; font-weight:500; color:#4a4233;}
+  .row.version .fname{font-size:14.5px; font-weight:500; color:#48484c;}
   .fpath{font-family:var(--mono); font-size:11px; color:var(--ink-2); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:rtl; text-align:left;}
   .badge{font-family:var(--mono); font-size:9px; font-weight:700; letter-spacing:.06em; padding:2px 6px; border-radius:5px; vertical-align:middle; margin-left:8px; text-transform:uppercase;}
   .badge.new{color:var(--green); background:rgba(105,120,65,.15); border:1px solid rgba(105,120,65,.3);}
@@ -205,7 +197,6 @@
     flex-shrink:0; display:none; align-items:center; gap:16px;
     padding:12px 20px; background:linear-gradient(#efe5cf,#e6d9bf);
     border-top:1px solid var(--line-2);
-    box-shadow:0 1px 0 rgba(255,255,255,.5) inset, 0 -8px 22px -18px rgba(60,45,25,.5);
   }
   .tcontrols{display:flex; align-items:center; gap:7px; flex-shrink:0;}
   .tbtn{width:38px; height:38px; border-radius:50%; display:grid; place-items:center; cursor:pointer;
@@ -217,15 +208,14 @@
   .np .nm{font-family:var(--display); font-size:15px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .np .pa{font-family:var(--mono); font-size:10.5px; color:var(--ink-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; direction:rtl; text-align:left; margin-top:2px;}
   .wavewrap{flex:1; min-width:0; display:flex; align-items:center; gap:12px;}
-  #wave{flex:1; height:46px; cursor:pointer; display:block; border-radius:8px; background:var(--inset); border:1px solid var(--line); box-shadow:0 1px 2px rgba(60,45,25,.08) inset;}
+  #wave{flex:1; height:46px; cursor:pointer; display:block; border-radius:8px; background:var(--inset); border:1px solid var(--line); box-shadow:0 1px 2px rgba(0,0,0,.06) inset;}
   .counter{font-family:var(--mono); font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums; white-space:nowrap; flex-shrink:0; letter-spacing:.02em;}
   .khint{display:flex; flex-wrap:wrap; justify-content:flex-end; align-content:center; gap:5px 9px; max-width:232px; flex-shrink:0; font-family:var(--mono); font-size:10px; color:var(--ink-2); line-height:1.3;}
   .khint span{display:inline-flex; align-items:center; gap:4px; white-space:nowrap;}
-  .khint kbd{background:var(--surface); border:1px solid var(--line-2); border-radius:4px; padding:1px 5px; font-family:var(--mono); font-size:10px; box-shadow:0 1px 0 rgba(60,45,25,.1);}
+  .khint kbd{background:var(--surface); border:1px solid var(--line-2); border-radius:4px; padding:1px 5px; font-family:var(--mono); font-size:10px; box-shadow:0 1px 0 rgba(0,0,0,.08);}
   @media (max-width:1040px){ .khint{display:none;} }
   @media (max-width:880px){ .np{display:none;} }
   /* ===== Apple-native / clean theme ===== */
-  .toolbar{ background:transparent; }
   ::selection{ background:rgba(10,132,255,.2); }
 
   header.bar{ background:#fbfbfddd; border-bottom-color:var(--line); box-shadow:0 .5px 0 rgba(0,0,0,.05); }
@@ -247,7 +237,6 @@
   .btn.disabled{ opacity:.34; pointer-events:none; }
 
   .search input:focus{ border-color:#0a84ff; box-shadow:0 0 0 3px rgba(10,132,255,.16); }
-  .toggle[aria-pressed="true"]{ background:#fff; color:var(--ink); box-shadow:var(--shadow-sm); }
 
   .row{ box-shadow:none; border-color:var(--line); }
   .row:hover{ background:#fbfbfd; border-color:var(--line-2); box-shadow:var(--shadow-sm); }
@@ -354,7 +343,6 @@
   .sf{ display:inline-block; width:1em; height:1em; background-color:currentColor; -webkit-mask:var(--m) center/contain no-repeat; mask:var(--m) center/contain no-repeat; vertical-align:-0.125em; flex-shrink:0; }
   .icon .sf{ width:16px; height:16px; }
   .btn .sf{ width:14px; height:14px; margin-right:6px; vertical-align:-2px; }
-  .toggle .sf{ width:13px; height:13px; margin-right:5px; vertical-align:-2px; }
   .tbtn .sf{ width:16px; height:16px; }
   .tbtn.big .sf{ width:18px; height:18px; }
   .play .sf{ width:13px; height:13px; margin-left:1px; }
@@ -444,7 +432,7 @@
   .dt-path:hover{ color:#0a84ff; }
   /* ---- browse sidebar ---- */
   #mainRow{ flex:1; display:flex; min-height:0; }
-  #sidebar{ width:228px; flex-shrink:0; overflow-y:auto; border-right:1px solid var(--line); padding:12px 10px 26px; background:rgba(245,237,220,.35); }
+  #sidebar{ width:228px; flex-shrink:0; overflow-y:auto; border-right:1px solid var(--line); padding:12px 10px 26px; background:rgba(0,0,0,.025); }
   .sb-sec{ font-family:var(--sans); font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-2); padding:0 8px; margin:15px 0 5px; }
   .sb-sec-row{ display:flex; align-items:center; justify-content:space-between; }
   .sb-add{ display:grid; place-items:center; width:18px; height:18px; border-radius:5px; border:none; background:transparent; color:var(--ink-3); cursor:pointer; }
@@ -594,8 +582,6 @@
     .btn.ghost{ background:transparent; }
     .btn.ghost:hover{ background:rgba(255,255,255,.08); }
     .btn.ghost.on{ background:rgba(10,132,255,.22); border-color:rgba(10,132,255,.4); color:#4aa3ff; }
-    .toggle{ color:var(--ink-2); }
-    .toggle[aria-pressed="true"]{ background:#3a3a3c; color:var(--ink); }
     .search input{ background:#2c2c2e; }
     .row:hover{ background:#333335; }
     .row.version{ background:#262628; }
@@ -1488,7 +1474,7 @@
     html+=`<div class="ctx-sep"></div>`;
     html+=`<div class="ctx-item" data-act="removefile"><span class="ctx-line"><span class="sf sf-minus"></span>Remove from list</span><span class="ctx-sub">${esc(rec.name)}</span></div>`;
     if (opts.length){
-      html+=`<div class="ctx-head">Hide a folder</div>`;
+      html+=`<div class="ctx-head">Ignore a folder</div>`;
       html+=opts.map(p=>`<div class="ctx-item" data-path="${esc(p)}"><span class="ctx-line"><span class="sf sf-ban"></span>${esc(p.split("/").pop())}</span><span class="ctx-sub">${esc(shortPath(p))}</span></div>`).join("");
     }
 
@@ -1865,7 +1851,7 @@
       + `<div class="dt-count">${files.length} version${files.length>1?"s":""}  ·  ${fmtSize(totSize)}  ·  drag any version out to Finder / your DAW</div>`
       + `<div class="dt-sec">Versions</div><div class="dt-vers">${vers}</div>`
       + `<div class="dt-sec">Collections</div><div class="dt-chips">${inColls.map(c=>`<span class="dt-chip">${esc(c.name)}</span>`).join("")||'<span class="dt-dim">None</span>'} <button class="dt-add" id="dtEditColl">edit…</button></div>`
-      + `<div class="dt-sec">Tags</div><div class="dt-chips">${tags.map(t=>`<span class="dt-chip tag">${esc(t)}</span>`).join("")||'<span class="dt-dim">None</span>'}</div>`
+      + `<div class="dt-sec">Tags</div><div class="dt-chips">${tags.map(t=>`<span class="dt-chip tag">${esc(t)}</span>`).join("")||'<span class="dt-dim">None</span>'} <button class="dt-add" id="dtEditTags">edit…</button></div>`
       + `<div class="dt-sec">Location</div><div class="dt-path" id="dtPath" title="Reveal in Finder">${esc(dir||"/")}</div>`;
     const body=$("dtBody");
     body.querySelectorAll(".dt-play").forEach(b=>b.onclick=()=>{ const f=files.find(x=>x.abs===b.dataset.abs); if(f) play(f); });
@@ -1873,6 +1859,7 @@
     body.querySelectorAll("[data-reveal]").forEach(b=>b.onclick=()=>{ const f=files.find(x=>x.abs===b.dataset.reveal); if(f) reveal(f); });
     body.querySelectorAll(".dt-ver").forEach(v=>v.addEventListener("dragstart",(e)=>{ if(DEMO){ e.preventDefault(); return; } const f=files.find(x=>x.abs===v.dataset.abs); if(f){ e.dataTransfer.setData("DownloadURL", dlUrl(f)); e.dataTransfer.effectAllowed="copy"; } }));
     const ec=$("dtEditColl"); if(ec) ec.onclick=(e)=>{ closeDetail(); showCollectionEditor(head, Math.max(20,e.clientX-220), Math.min(e.clientY, window.innerHeight-360)); };
+    const et=$("dtEditTags"); if(et) et.onclick=(e)=>{ closeDetail(); showCollectionEditor(head, Math.max(20,e.clientX-220), Math.min(e.clientY, window.innerHeight-360)); };
     const dp=$("dtPath"); if(dp) dp.onclick=()=>reveal(head);
     $("detail").classList.add("show");
   }
