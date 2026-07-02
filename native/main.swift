@@ -175,18 +175,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     @objc func openSettingsMenu() { web("window.bfOpenSettings && window.bfOpenSettings()") }
 
     // Fetch bytes from a URL synchronously (used for the GitHub API + asset download).
-    func httpData(_ url: URL, timeout: TimeInterval = 12) -> (code: Int, data: Data?) {
+    // Conditional requests: GitHub doesn't count 304 responses against the anonymous
+    // 60/hr rate limit, so frequent update checks stay effectively free.
+    func httpData(_ url: URL, timeout: TimeInterval = 12, etag: String? = nil) -> (code: Int, data: Data?, etag: String?) {
         var req = URLRequest(url: url); req.timeoutInterval = timeout
         req.setValue("WavCave", forHTTPHeaderField: "User-Agent")
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        if let etag = etag { req.setValue(etag, forHTTPHeaderField: "If-None-Match") }
         let sem = DispatchSemaphore(value: 0)
-        var code = 0; var out: Data?
+        var code = 0; var out: Data?; var newTag: String?
         URLSession.shared.dataTask(with: req) { d, resp, _ in
-            if let h = resp as? HTTPURLResponse { code = h.statusCode }
+            if let h = resp as? HTTPURLResponse {
+                code = h.statusCode
+                newTag = h.value(forHTTPHeaderField: "ETag")
+            }
             out = d; sem.signal()
         }.resume()
         _ = sem.wait(timeout: .now() + timeout + 2)
-        return (code, out)
+        return (code, out, newTag)
     }
     // Download a file (follows redirects to GitHub's asset CDN) to a local path.
     func httpDownload(_ url: URL, toPath path: String) -> Bool {
@@ -229,8 +235,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     func checkForUpdate(manual: Bool = false) {
         DispatchQueue.global().async {
             let url = URL(string: "https://api.github.com/repos/\(self.updateRepo)/releases/latest")!
-            let r = self.httpData(url)
-            guard r.code == 200, let d = r.data,
+            let ud = UserDefaults.standard
+            let r = self.httpData(url, etag: ud.string(forKey: "bfReleaseETag"))
+            var body: Data?
+            if r.code == 304 {
+                body = ud.data(forKey: "bfReleaseBody")   // unchanged since last check
+            } else if r.code == 200, let d = r.data {
+                body = d
+                ud.set(d, forKey: "bfReleaseBody")
+                ud.set(r.etag, forKey: "bfReleaseETag")
+            }
+            guard let d = body,
                   let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
                   let tag = j["tag_name"] as? String, !tag.isEmpty else {
                 if manual { self.web("window.bfUpdateNone&&window.bfUpdateNone(false)") }
