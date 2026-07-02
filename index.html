@@ -315,7 +315,7 @@
   .pathfilter .pf .x:hover{ background:rgba(10,132,255,.18); }
 
   /* context menu */
-  #ctxMenu{ position:fixed; display:none; z-index:1000; background:#fff; border:1px solid var(--line-2); border-radius:11px; padding:5px; min-width:230px; max-width:340px; box-shadow:0 12px 32px rgba(0,0,0,.18), 0 0 0 .5px rgba(0,0,0,.04); }
+  #ctxMenu{ position:fixed; display:none; z-index:3100; background:#fff; border:1px solid var(--line-2); border-radius:11px; padding:5px; min-width:230px; max-width:340px; box-shadow:0 12px 32px rgba(0,0,0,.18), 0 0 0 .5px rgba(0,0,0,.04); }
   #dropOverlay{ position:fixed; inset:0; z-index:2000; display:none; align-items:center; justify-content:center; background:rgba(10,132,255,.1); }
   #dropOverlay.show{ display:flex; }
   #dropOverlay .box{ display:flex; align-items:center; gap:12px; padding:26px 40px; background:var(--surface); border:2px dashed #0a84ff; border-radius:18px; font-size:18px; font-weight:600; color:var(--ink); box-shadow:var(--shadow); }
@@ -337,6 +337,9 @@
   .ctx-check:hover{ background:var(--inset); }
   .ctx-check input{ accent-color:#0a84ff; }
   .ctx-btn:hover{ filter:brightness(.97); }
+  .ctx-tags{ display:flex; flex-wrap:wrap; gap:6px; padding:4px 10px 8px; max-width:300px; }
+  .ctx-tag{ font-size:12px; padding:3px 10px; border-radius:999px; border:1px solid var(--line-2); background:var(--inset); color:var(--ink); cursor:pointer; }
+  .ctx-tag.on{ color:var(--accent); background:rgba(10,132,255,.1); border-color:rgba(10,132,255,.3); }
 
   /* ---- SF Symbols (system glyphs, used as recolorable masks) ---- */
   .sf{ display:inline-block; width:1em; height:1em; background-color:currentColor; -webkit-mask:var(--m) center/contain no-repeat; mask:var(--m) center/contain no-repeat; vertical-align:-0.125em; flex-shrink:0; }
@@ -1407,7 +1410,7 @@
 
   /* ---------- context menu ---------- */
   const ctx=$("ctxMenu");
-  const hideCtx=()=>{ ctx.style.display="none"; };
+  const hideCtx=()=>{ ctx.style.display="none"; if(ctx._onHide){ const f=ctx._onHide; ctx._onHide=null; f(); } };
   ctx.addEventListener("click", e=>e.stopPropagation());   // clicks inside the menu (e.g. the artist editor) keep it open
   const shortPath=(p)=>p.split("/").slice(-3).join(" / ");
   function removeStack(stack){
@@ -1452,6 +1455,47 @@
     ctx.style.left=Math.min(x,window.innerWidth-ctx.offsetWidth-8)+"px";
     ctx.style.top=Math.min(y,window.innerHeight-ctx.offsetHeight-8)+"px";
     setTimeout(()=>{ const i=$("ctxNewColl"); if(i&&!collections.length) i.focus(); },0);
+  }
+  const anchorPos=(el)=>{ const r=el.getBoundingClientRect(); return {x:r.left, y:r.bottom+6}; };
+  function popoverAt(pos){
+    ctx.style.display="block";
+    ctx.style.left=Math.max(8, Math.min(pos.x, window.innerWidth-ctx.offsetWidth-8))+"px";
+    ctx.style.top=Math.max(8, Math.min(pos.y, window.innerHeight-ctx.offsetHeight-8))+"px";
+  }
+  function refreshDetailIfOpen(rec){ if($("detail").classList.contains("show")) openDetail(rec); }
+  // Collections picker: checkbox per collection + create-new, saves instantly.
+  function showCollectionPicker(rec, pos){
+    const key=groupKey(rec.name);
+    const checks=collections.map(c=>`<label class="ctx-check"><input type="checkbox" data-cid="${esc(c.id)}" ${c.keys.includes(key)?"checked":""}> ${esc(c.name)}<span class="ctx-sub" style="margin-left:auto">${c.keys.length}</span></label>`).join("");
+    ctx.innerHTML=`<div class="ctx-head">Add to collection</div>`
+      + (checks||`<div class="ctx-sub" style="padding:2px 12px 6px">No collections yet \u2014 make one below.</div>`)
+      + `<div class="ctx-row"><input id="ctxNewColl" class="ctx-input" placeholder="New collection\u2026" spellcheck="false" autocomplete="off" /><button class="ctx-btn primary" id="ctxNewCollAdd">Add</button></div>`;
+    ctx.querySelectorAll("input[data-cid]").forEach(cb=>cb.onchange=()=>{ toggleInCollection(cb.dataset.cid,key); buildCollSel(); renderSidebar(); refreshDetailIfOpen(rec); });
+    $("ctxNewCollAdd").onclick=()=>{ const n=$("ctxNewColl").value.trim(); if(n){ const id=newCollection(n); toggleInCollection(id,key); buildCollSel(); renderSidebar(); refreshDetailIfOpen(rec); showCollectionPicker(rec,pos); } };
+    $("ctxNewColl").addEventListener("keydown",e=>{ e.stopPropagation(); if(e.key==="Enter"){ e.preventDefault(); $("ctxNewCollAdd").click(); } });
+    popoverAt(pos);
+  }
+  // Tag picker: comma input + every known tag as a toggle chip.
+  // Done or clicking away commits; Esc cancels.
+  function showTagPicker(rec, pos){
+    const key=groupKey(rec.name);
+    const cur=songTags.get(key)||[];
+    const all=new Set(); songTags.forEach(v=>v.forEach(t=>all.add(t)));
+    const opts=[...all].sort((a,b)=>a.localeCompare(b));
+    ctx.innerHTML=`<div class="ctx-head">Tags</div>`
+      + `<input id="ctxTagInput" class="ctx-input" placeholder="tag, tag\u2026" value="${esc(cur.join(", "))}" spellcheck="false" autocomplete="off" />`
+      + (opts.length?`<div class="ctx-tags">${opts.map(t=>`<button type="button" class="ctx-tag ${cur.includes(t)?"on":""}" data-tag="${esc(t)}">${esc(t)}</button>`).join("")}</div>`:"")
+      + `<div class="ctx-row"><button class="ctx-btn primary" id="ctxTagDone">Done</button></div>`;
+    const parse=()=>$("ctxTagInput").value.split(",").map(x=>x.trim()).filter(Boolean);
+    const syncChips=()=>{ const set=new Set(parse().map(t=>t.toLowerCase())); ctx.querySelectorAll(".ctx-tag").forEach(b=>b.classList.toggle("on", set.has(b.dataset.tag.toLowerCase()))); };
+    const save=()=>{ const t=parse(); if(t.length) songTags.set(key,t); else songTags.delete(key); saveTags(); render(); refreshDetailIfOpen(rec); };
+    ctx.querySelectorAll(".ctx-tag").forEach(b=>b.onclick=()=>{ const t=b.dataset.tag; const list=parse(); const i=list.findIndex(x=>x.toLowerCase()===t.toLowerCase()); if(i>=0) list.splice(i,1); else list.push(t); $("ctxTagInput").value=list.join(", "); syncChips(); });
+    $("ctxTagInput").addEventListener("input", syncChips);
+    ctx._onHide=save;   // clicking anywhere else commits, like the macOS tag editor
+    $("ctxTagDone").onclick=()=>hideCtx();
+    $("ctxTagInput").addEventListener("keydown",e=>{ e.stopPropagation(); if(e.key==="Enter"){ e.preventDefault(); hideCtx(); } else if(e.key==="Escape"){ ctx._onHide=null; hideCtx(); } });
+    popoverAt(pos);
+    setTimeout(()=>{ const i=$("ctxTagInput"); if(i) i.focus(); },0);
   }
   function showCtx(x,y,rec){
     if (!rec) return;
@@ -1856,8 +1900,8 @@
     body.querySelectorAll("[data-pin]").forEach(b=>b.onclick=()=>{ pinnedHeads.set(key,b.dataset.pin); savePinned(); render(); openDetail(rec); });
     body.querySelectorAll("[data-reveal]").forEach(b=>b.onclick=()=>{ const f=files.find(x=>x.abs===b.dataset.reveal); if(f) reveal(f); });
     body.querySelectorAll(".dt-ver").forEach(v=>v.addEventListener("dragstart",(e)=>{ if(DEMO){ e.preventDefault(); return; } const f=files.find(x=>x.abs===v.dataset.abs); if(f){ e.dataTransfer.setData("DownloadURL", dlUrl(f)); e.dataTransfer.effectAllowed="copy"; } }));
-    const ec=$("dtEditColl"); if(ec) ec.onclick=(e)=>{ e.stopPropagation(); closeDetail(); showCollectionEditor(head, Math.max(20,e.clientX-220), Math.min(e.clientY, window.innerHeight-360)); };
-    const et=$("dtEditTags"); if(et) et.onclick=(e)=>{ e.stopPropagation(); closeDetail(); showCollectionEditor(head, Math.max(20,e.clientX-220), Math.min(e.clientY, window.innerHeight-360)); };
+    const ec=$("dtEditColl"); if(ec) ec.onclick=(e)=>{ e.stopPropagation(); showCollectionPicker(head, anchorPos(e.currentTarget)); };
+    const et=$("dtEditTags"); if(et) et.onclick=(e)=>{ e.stopPropagation(); showTagPicker(head, anchorPos(e.currentTarget)); };
     const dp=$("dtPath"); if(dp) dp.onclick=()=>reveal(head);
     $("detail").classList.add("show");
   }
