@@ -53,6 +53,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         buildMenu()
         buildWindow()
         ensureBackendThenLoad()
+        // Long-running instances should still learn about new releases.
+        Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
+            self?.checkForUpdate()
+        }
+    }
+
+    // If WebKit recycles the page's content process (e.g. under memory pressure),
+    // the page goes blank and its JS->native bridge dies silently — reload so the
+    // app heals itself instead of looking alive but ignoring every click.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        NSLog("WavCave: web content process terminated — reloading UI")
+        webView.load(URLRequest(url: appURL()))
     }
 
     // MARK: window + webview
@@ -241,7 +253,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
     }
     func downloadUpdate() {
-        let tag = latestTag; guard !tag.isEmpty else { return }
+        let tag = latestTag
+        guard !tag.isEmpty else {
+            NSLog("WavCave: download requested but no known update tag — telling UI to re-check")
+            web("window.bfUpdateError&&window.bfUpdateError()")
+            return
+        }
+        NSLog("WavCave: downloading update \(tag)")
         DispatchQueue.global().async {
             let fm = FileManager.default, dir = self.updateDir()
             try? fm.removeItem(atPath: dir)
@@ -268,7 +286,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
     }
     func applyUpdateAndRestart() {
-        guard let staged = stagedApp else { return }
+        guard let staged = stagedApp else {
+            NSLog("WavCave: restart requested but no staged update")
+            web("window.bfUpdateError&&window.bfUpdateError()")
+            return
+        }
+        NSLog("WavCave: applying staged update from \(staged)")
         let dest = Bundle.main.bundlePath
         let pid = ProcessInfo.processInfo.processIdentifier
         let sp = NSString(string: "~/Library/Application Support/WavCave/swap.sh").expandingTildeInPath

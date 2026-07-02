@@ -659,14 +659,6 @@
       <label class="sortsel"><span class="sl">Show</span><select id="collSel"><option value="">All songs</option></select></label>
       <label class="sortsel"><span class="sl">Sort</span><select id="sortSel"><option value="name">Name</option><option value="artist">Artist</option><option value="context">Context</option><option value="recent">Recent</option></select></label>
     </div>
-    <div class="stats" id="stats">
-      <div class="stat"><div class="n" id="statSongs">0</div><div class="l">Songs</div></div>
-      <div class="stat"><div class="n" id="statTotal">0</div><div class="l">Files</div></div>
-      <div class="stat"><div class="n wav" id="statWav">0</div><div class="l">WAV</div></div>
-      <div class="stat"><div class="n mp3" id="statMp3">0</div><div class="l">MP3</div></div>
-      <div class="stat"><div class="n" id="statSize">0</div><div class="l">Size</div></div>
-      <div class="stat"><div class="n star" id="statStar">0</div><div class="l">Starred</div></div>
-    </div>
     <div class="cloudbar" id="cloudBar"></div>
     <div class="selbar" id="selBar"></div>
   </div>
@@ -766,6 +758,15 @@
     <p class="set-sub">Skip any file inside a folder whose name <em>contains</em> one of these tags (comma-separated) &mdash; so <code>stem</code> also catches <code>stems</code> and <code>GoodCryStems</code>. Applies instantly.</p>
     <input id="ignore" class="kw-word" style="width:100%;" spellcheck="false" autocapitalize="off" autocomplete="off" type="text" value="samples, processed, stem" />
     <p class="set-note">Tip: right-click any folder in the left sidebar to add it here.</p>
+    <div class="set-sec-title" style="margin-top:26px;">Your library</div>
+    <div class="stats" id="stats">
+      <div class="stat"><div class="n" id="statSongs">0</div><div class="l">Songs</div></div>
+      <div class="stat"><div class="n" id="statTotal">0</div><div class="l">Files</div></div>
+      <div class="stat"><div class="n wav" id="statWav">0</div><div class="l">WAV</div></div>
+      <div class="stat"><div class="n mp3" id="statMp3">0</div><div class="l">MP3</div></div>
+      <div class="stat"><div class="n" id="statSize">0</div><div class="l">Size</div></div>
+      <div class="stat"><div class="n star" id="statStar">0</div><div class="l">Starred</div></div>
+    </div>
     <div class="set-sec-title" style="margin-top:26px;">Software</div>
     <button class="btn" id="setCheckUpd"><span class="sf sf-rescan"></span>Check for Updates</button>
     <p class="set-note" id="setUpdateMsg"></p>
@@ -1290,13 +1291,6 @@
     else if (nav.kind==="artist") shown=shown.filter(f=>artistLabel(f)===nav.value && (!nav.ctx||contextLabel(f)===nav.ctx));
     else if (nav.kind==="starred") shown=shown.filter(f=>favs.has(groupKey(f.name)));
     else if (nav.kind==="recent"){ const hs=new Set(playHistory.map(h=>h.abs)); shown=shown.filter(f=>hs.has(f.abs)); }
-    const ag=allGroups();
-    $("statSongs").textContent=ag.length.toLocaleString();
-    $("statStar").textContent=ag.filter(g=>favs.has(g.key)).length.toLocaleString();
-    $("statTotal").textContent=allFiles.length.toLocaleString();
-    $("statWav").textContent=allFiles.filter(f=>f.ext==="wav").length.toLocaleString();
-    $("statMp3").textContent=allFiles.filter(f=>f.ext==="mp3").length.toLocaleString();
-    $("statSize").textContent=fmtSize(allFiles.reduce((s,f)=>s+(f.size||0),0));
 
     playOrder=[]; navOrder=[]; let html="", count=0; const cmp=cmpBy(sortMode); const artistCount={};
     const artHdr=(a,cl)=>`<li class="artisthdr ${cl?"closed":""}" data-artist="${esc(a)}"><span class="sf sf-chev"></span><span class="ah-name">${esc(a)}</span><span class="ah-count">${artistCount[a]||0}</span></li>`;
@@ -1782,7 +1776,13 @@
   window.bfDragState = (on)=>{ const o=$("dropOverlay"); if(o) o.classList.toggle("show", !!on && !DEMO); };
 
   /* ---- in-app updates (driven by the native app via gh) ---- */
-  function bfSend(o){ try{ window.webkit.messageHandlers.bf.postMessage(o); }catch(e){} }
+  let _updWatchdog=0;
+  function _updExpectReply(){ clearTimeout(_updWatchdog); _updWatchdog=setTimeout(()=>{ const m="The updater didn\u2019t respond \u2014 quit and reopen WavCave, then try again."; status(m); const sm=$("setUpdateMsg"); if(sm) sm.textContent=m; setUpdApply("available"); const b=$("updateBar"); if(b&&b.classList.contains("show")){ $("updateMsg").textContent=m; const btn=$("updateBtn"); btn.textContent="Retry"; btn.disabled=false; } }, 180000); }
+  function _updGotReply(){ clearTimeout(_updWatchdog); _updWatchdog=0; }
+  function bfSend(o){
+    try{ window.webkit.messageHandlers.bf.postMessage(o); if(o&&o.action==="download") _updExpectReply(); }
+    catch(e){ status("The updater isn\u2019t reachable \u2014 quit and reopen WavCave, then try again."); }
+  }
   let setUpdVer="", updState="idle";
   function setUpdApply(mode){
     updState=mode; const btn=$("setCheckUpd"); if(!btn) return; const msg=$("setUpdateMsg");
@@ -1794,8 +1794,8 @@
   }
   const _setOpen = ()=>{ const s=$("settings"); return !!(s&&s.classList.contains("show")); };
   window.bfUpdate = (ver,notes)=>{ setUpdVer=ver; const b=$("updateBar"); if(b){ b.dataset.ver=ver; b.dataset.mode=""; $("updateMsg").innerHTML="WavCave <b>"+esc(String(ver))+"</b> is available."; const btn=$("updateBtn"); btn.textContent="Update"; btn.disabled=false; $("updateLater").style.display=""; } setUpdApply("available"); if(!_setOpen() && b){ b.classList.add("show"); } };
-  window.bfUpdateReady = ()=>{ const b=$("updateBar"); if(b){ $("updateMsg").innerHTML="Update downloaded \u2014 restart to finish."; b.dataset.mode="restart"; const btn=$("updateBtn"); btn.textContent="Restart"; btn.disabled=false; $("updateLater").style.display="none"; } setUpdApply("ready"); if(!_setOpen() && b){ b.classList.add("show"); } };
-  window.bfUpdateError = ()=>{ const b=$("updateBar"); if(b){ $("updateMsg").textContent="Update failed \u2014 try again later."; b.dataset.mode=""; const btn=$("updateBtn"); btn.textContent="Retry"; btn.disabled=false; } setUpdApply("available"); const m=$("setUpdateMsg"); if(m) m.textContent="Update failed \u2014 try again."; };
+  window.bfUpdateReady = ()=>{ _updGotReply(); const b=$("updateBar"); if(b){ $("updateMsg").innerHTML="Update downloaded \u2014 restart to finish."; b.dataset.mode="restart"; const btn=$("updateBtn"); btn.textContent="Restart"; btn.disabled=false; $("updateLater").style.display="none"; } setUpdApply("ready"); if(!_setOpen() && b){ b.classList.add("show"); } };
+  window.bfUpdateError = ()=>{ _updGotReply(); const b=$("updateBar"); if(b){ $("updateMsg").textContent="Update failed \u2014 try again later."; b.dataset.mode=""; const btn=$("updateBtn"); btn.textContent="Retry"; btn.disabled=false; } setUpdApply("available"); const m=$("setUpdateMsg"); if(m) m.textContent="Update failed \u2014 try again."; };
   window.bfUpdateNone = (uptodate)=>{ const m=uptodate?"You\u2019re on the latest version.":"Couldn\u2019t check for updates right now."; status(m); const sm=$("setUpdateMsg"); if(sm) sm.textContent=m; };
   if ($("updateBtn")) $("updateBtn").addEventListener("click", ()=>{
     const b=$("updateBar"), btn=$("updateBtn");
@@ -2024,7 +2024,15 @@
   }
 
   let _kwSnap="";
-  function openSettings(){ _kwSnap=JSON.stringify(keywords); renderKwEditor($("settingsKw")); const rn=$("setRescan"); if(rn) rn.style.display=(roots.length&&!DEMO)?"":"none"; setUpdApply(updState); $("settings").classList.add("show"); }
+  function openSettings(){
+    _kwSnap=JSON.stringify(keywords); renderKwEditor($("settingsKw"));
+    { const ag=allGroups();
+      $("statSongs").textContent=ag.length.toLocaleString();
+      $("statStar").textContent=ag.filter(g=>favs.has(g.key)).length.toLocaleString();
+      $("statTotal").textContent=allFiles.length.toLocaleString();
+      $("statWav").textContent=allFiles.filter(f=>f.ext==="wav").length.toLocaleString();
+      $("statMp3").textContent=allFiles.filter(f=>f.ext==="mp3").length.toLocaleString();
+      $("statSize").textContent=fmtSize(allFiles.reduce((s,f)=>s+(f.size||0),0)); } const rn=$("setRescan"); if(rn) rn.style.display=(roots.length&&!DEMO)?"":"none"; setUpdApply(updState); $("settings").classList.add("show"); }
   function closeSettings(){
     $("settings").classList.remove("show");
     keywords=keywords.filter(k=>k.word.trim()); if(!keywords.length) keywords=DEFAULT_KW(); saveKeywords();
