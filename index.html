@@ -1365,11 +1365,18 @@
       + (n>=2 ? `<button class="btn primary" id="doCombine">Combine ${n} into one</button>` : "")
       + (canSplit ? `<button class="btn" id="doSplit">Split apart</button>` : "")
       + `<button class="btn ghost" id="selDone">Done</button>`;
-    const dc=$("doCombine"); if (dc) dc.onclick=()=>{ if (combineKeys([...selected])) exitSelect(true); };
-    const ds=$("doSplit");   if (ds) ds.onclick=()=>{ if (uncombine([...selected][0])) exitSelect(true); };
+    const dc=$("doCombine"); if (dc) dc.onclick=()=>{ const k=[...selected][0]; if (combineKeys([...selected])){ exitSelect(true); revealKey(k); } };
+    const ds=$("doSplit");   if (ds) ds.onclick=()=>{ const k=[...selected][0]; if (uncombine(k)){ exitSelect(true); revealKey(k); } };
     $("selDone").onclick=()=>exitSelect(false);
   }
   function exitSelect(changed){ selectMode=false; selected.clear(); if (changed) render(); else updateSelectionUI(); }
+  // After combine/split the list rebuilds and rows above the viewport shrink,
+  // which visually yanks the list — re-anchor on the song that was acted on.
+  function revealKey(key){
+    const root=find(key);
+    const li=[...$("list").querySelectorAll("li.row")].find(r=>r.dataset.key===root);
+    if (li){ setCursor(li,false); li.scrollIntoView({block:"nearest"}); }
+  }
   function markPlaying(){
     const idx=idxByAbs(playOrder,currentFile);
     const isPlaying = !!currentFile && (DEMO?demoPlaying:!audio.paused);
@@ -1723,8 +1730,8 @@
     if (t.tagName==="INPUT"||t.tagName==="SELECT"||t.tagName==="TEXTAREA"||t.isContentEditable) return;
     if ((e.metaKey||e.ctrlKey)&&(e.key==="j"||e.key==="J")){
       e.preventDefault(); const keys=[...selected];
-      if (keys.length>=2){ if(combineKeys(keys)){ selected.clear(); render(); } }
-      else if (keys.length===1){ if(uncombine(keys[0])){ selected.clear(); render(); } }
+      if (keys.length>=2){ if(combineKeys(keys)){ selected.clear(); render(); revealKey(keys[0]); } }
+      else if (keys.length===1){ if(uncombine(keys[0])){ selected.clear(); render(); revealKey(keys[0]); } }
       return;
     }
     if ((e.metaKey||e.ctrlKey)&&(e.key==="i"||e.key==="I")){ const li=cursorRowEl(); if(li){ e.preventDefault(); openDetail(playOrder[+li.dataset.i]); } return; }
