@@ -415,6 +415,7 @@ final class WavCaveServer {
         case "/api/reveal":     apiReveal(req, fd)
         case "/api/prefetch":   apiPrefetch(req, fd)
         case "/api/status":     apiStatus(req, fd)
+        case "/api/free":       apiFree(req, fd)
         case "/api/file":       apiFile(req, fd)
         default:                serveStatic(req, fd)
         }
@@ -539,6 +540,21 @@ final class WavCaveServer {
             return sendJSON(fd, ["error": "forbidden"], code: 403)
         }
         sendJSON(fd, ["online": isOnlineOnly(st)])
+    }
+
+    /// Free space (and volume id) for the filesystem containing an allowed path —
+    /// lets the UI warn before "Download all" would run a disk out of space.
+    private func apiFree(_ req: HTTPRequest, _ fd: Int32) {
+        guard let t = req.query["path"], !t.isEmpty, isAllowedPath(t) else {
+            return sendJSON(fd, ["error": "forbidden"], code: 403)
+        }
+        var fs = statfs()
+        guard statfs(t, &fs) == 0 else {
+            return sendJSON(fd, ["error": "stat failed"], code: 500)
+        }
+        var sb = stat()
+        let dev = (stat(t, &sb) == 0) ? Int64(sb.st_dev) : 0
+        sendJSON(fd, ["free": Int64(fs.f_bavail) * Int64(fs.f_bsize), "dev": dev])
     }
 
     // MARK: static files

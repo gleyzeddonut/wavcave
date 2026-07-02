@@ -294,6 +294,7 @@
   .cloudbar.show{ display:flex; }
   .cloudbar .cb-txt{ flex:1; font-size:13px; color:var(--ink-2); }
   .cloudbar .cb-txt b{ color:var(--ink); font-weight:600; }
+  .cloudbar .cb-warn{ color:#e0453a; font-weight:600; }
   .cloudbar .cb-dl{ font-size:12.5px; font-weight:600; color:#fff; background:#0a84ff; border:1px solid #0a84ff; border-radius:8px; padding:6px 13px; cursor:pointer; }
   .cloudbar .cb-dl:hover{ background:#0a78ec; }
   .cloudbar .cb-auto{ display:inline-flex; align-items:center; gap:6px; color:var(--ink-2); cursor:pointer; user-select:none; font-size:12.5px; padding-right:8px; }
@@ -1173,16 +1174,58 @@
     if (list.length) status(`Downloading ${list.length} file${list.length>1?"s":""} from the cloud\u2026`);
   }
   function onlineCount(){ return allFiles.filter(f=>f.online).length; }
+
+  /* free-disk-space guard for Download all: a bulk cloud download must never
+     silently run a volume out of space */
+  const _freeCache=new Map();   // root -> {t, free, dev}
+  async function freeFor(root){
+    const c=_freeCache.get(root); const now=Date.now();
+    if (c && now-c.t<30000) return c;
+    try{
+      const j=await (await fetch(api("/api/free?path="+encodeURIComponent(root)))).json();
+      if (typeof j.free!=="number") return null;
+      const v={t:now, free:j.free, dev:j.dev||0}; _freeCache.set(root,v); return v;
+    }catch(e){ return null; }
+  }
+  let cloudShort=null;   // {need, free} when the pending download won't fit its volume
+  async function checkCloudSpace(files){
+    cloudShort=null;
+    const owners=roots.filter(r=>files.some(f=>inside(f.abs,r)));
+    const perDev=new Map();   // two roots can share a volume \u2014 sum needs per device
+    for (const r of owners){
+      const v=await freeFor(r); if(!v) return;
+      const need=files.filter(f=>inside(f.abs,r)).reduce((s,f)=>s+(f.size||0),0);
+      const cur=perDev.get(v.dev)||{free:v.free, need:0};
+      cur.need+=need; perDev.set(v.dev,cur);
+    }
+    let worst=null;
+    for (const d of perDev.values()) if (d.need>d.free && (!worst || d.need-d.free>worst.need-worst.free)) worst=d;
+    if (worst){
+      cloudShort=worst;
+      const w=$("cbWarn");
+      if (w) w.textContent=" \u2014 downloading everything needs "+fmtSize(worst.need)+" but that disk only has "+fmtSize(worst.free)+" free";
+    }
+  }
+  function confirmDownloadAll(){
+    if (!cloudShort) return downloadAll();
+    confirmDialog({
+      title:"Not enough disk space",
+      message:"Downloading every online-only file needs <b>"+esc(fmtSize(cloudShort.need))+"</b>, but that disk only has <b>"+esc(fmtSize(cloudShort.free))+"</b> free. Filling the disk can slow your whole Mac down.",
+      actions:[ {label:"Download anyway", cls:"danger", onClick:()=>downloadAll()}, {label:"Cancel", cls:"ghost"} ]
+    });
+  }
   function updateCloudBar(){
-    const bar=$("cloudBar"); const n=onlineCount();
-    if (!rawMatches.length || n===0){ bar.classList.remove("show"); bar.innerHTML=""; return; }
+    const bar=$("cloudBar"); const files=allFiles.filter(f=>f.online); const n=files.length;
+    if (!rawMatches.length || n===0){ bar.classList.remove("show"); bar.innerHTML=""; cloudShort=null; return; }
+    const total=files.reduce((s,f)=>s+(f.size||0),0);
     bar.classList.add("show");
     bar.innerHTML=`<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" style="color:#0a84ff;flex-shrink:0;"><path d="M7 18.5a4.75 4.75 0 0 1-.7-9.45A5.25 5.25 0 0 1 16.7 9.7a4 4 0 0 1-.45 8.8H7z"/></svg>`
-      +`<span class="cb-txt"><b>${n}</b> file${n>1?"s":""} ${n>1?"are":"is"} online-only \u2014 they download when you play them</span>`
-      +`<button class="cb-dl" id="dlBtn">Download all</button>`
+      +`<span class="cb-txt"><b>${n}</b> file${n>1?"s":""} ${n>1?"are":"is"} online-only \u2014 they download when you play them<span class="cb-warn" id="cbWarn"></span></span>`
+      +`<button class="cb-dl" id="dlBtn">Download all (${fmtSize(total)})</button>`
       +`<label class="cb-auto"><input type="checkbox" id="autoDlChk" ${autoDl?"checked":""}> Auto-download new</label>`;
-    bar.querySelector("#dlBtn").addEventListener("click",()=>downloadAll());
+    bar.querySelector("#dlBtn").addEventListener("click",()=>confirmDownloadAll());
     bar.querySelector("#autoDlChk").addEventListener("change",(e)=>{ autoDl=e.target.checked; saveSettings(); if(autoDl) downloadAll(); });
+    if (!DEMO) checkCloudSpace(files);
   }
 
   /* ---------- render ---------- */

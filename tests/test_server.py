@@ -436,3 +436,18 @@ def test_prefetch_flood_stays_responsive(srv, cloud_root):
         assert srv.get_json("/api/prefetch", path=p) == {"ok": True}
     assert srv.get_json("/api/ping") == {"ok": True}
     assert time.time() - start < 5
+
+
+# ---------- free-space endpoint (Download all disk guard) ----------
+
+def test_free_space_endpoint(srv):
+    scan(srv, srv.library)
+    j = srv.get_json("/api/free", path=str(srv.library))
+    assert j["free"] > 0
+    assert isinstance(j["dev"], int) and j["dev"] != 0
+
+
+def test_free_space_forbidden_outside_roots(srv):
+    with pytest.raises(urllib.error.HTTPError) as e:
+        srv.get("/api/free", path="/etc")
+    assert e.value.code == 403
