@@ -1155,6 +1155,7 @@
     const li=[...$("list").children].find(li=>playOrder[+li.dataset.i] && playOrder[+li.dataset.i].abs===abs);
     if (li){ const c=li.querySelector(".cloud"); if(c) c.remove(); }
     updateCloudBar();
+    if (currentFile && currentFile.abs===abs && !peaksReal) drawWave(currentFile);   // real waveform once the file is local
     if (!onlineCount()) status("");
   }
   function ensurePoller(){
@@ -1177,7 +1178,7 @@
     if (!rawMatches.length || n===0){ bar.classList.remove("show"); bar.innerHTML=""; return; }
     bar.classList.add("show");
     bar.innerHTML=`<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" style="color:#0a84ff;flex-shrink:0;"><path d="M7 18.5a4.75 4.75 0 0 1-.7-9.45A5.25 5.25 0 0 1 16.7 9.7a4 4 0 0 1-.45 8.8H7z"/></svg>`
-      +`<span class="cb-txt"><b>${n}</b> file${n>1?"s":""} ${n>1?"are":"is"} online-only \u2014 they download when you play or hover them</span>`
+      +`<span class="cb-txt"><b>${n}</b> file${n>1?"s":""} ${n>1?"are":"is"} online-only \u2014 they download when you play them</span>`
       +`<button class="cb-dl" id="dlBtn">Download all</button>`
       +`<label class="cb-auto"><input type="checkbox" id="autoDlChk" ${autoDl?"checked":""}> Auto-download new</label>`;
     bar.querySelector("#dlBtn").addEventListener("click",()=>downloadAll());
@@ -1543,19 +1544,20 @@
 
   /* ---------- waveform ---------- */
   const wave=$("wave"); const wctx=wave.getContext("2d");
-  let peaks=null;
+  let peaks=null, peaksReal=false;
   function sizeWave(){ const r=wave.getBoundingClientRect(); if(r.width<2) return; const dpr=window.devicePixelRatio||1; wave.width=Math.floor(r.width*dpr); wave.height=Math.floor(r.height*dpr); wctx.setTransform(dpr,0,0,dpr,0,0); renderWave(); }
   function synthPeaks(seed){ let h=0; for(let i=0;i<seed.length;i++) h=(h*31+seed.charCodeAt(i))>>>0; const N=320, out=new Float32Array(N); for(let i=0;i<N;i++){ h=(h*1103515245+12345)>>>0; const r=(h&0xffff)/0xffff; const env=Math.sin((i/N)*Math.PI)*0.7+0.3; out[i]=Math.pow(r,1.8)*env; } return out; }
   async function drawWave(rec){
     sizeWave();
     if(!rec){ peaks=null; renderWave(); return; }
     if (DEMO){ peaks=synthPeaks(rec.name); renderWave(); return; }
-    peaks=synthPeaks(rec.name); renderWave();              // instant placeholder
+    peaks=synthPeaks(rec.name); peaksReal=false; renderWave();   // instant placeholder
     try{
-      // real peaks are computed + cached once by the server (no full-file download/decode in the browser)
+      // real peaks are computed + cached once by the server (no full-file download/decode
+      // in the browser; online-only files keep the placeholder until they're local)
       const j=await (await fetch(api("/api/peaks?path="+encodeURIComponent(rec.abs)))).json();
       if (currentFile!==rec) return;
-      if (Array.isArray(j.peaks) && j.peaks.length){ peaks=Float32Array.from(j.peaks); renderWave(); }
+      if (Array.isArray(j.peaks) && j.peaks.length){ peaks=Float32Array.from(j.peaks); peaksReal=true; renderWave(); }
     } catch(e){ /* keep synthetic */ }
   }
   function renderWave(){
@@ -1655,8 +1657,9 @@
       setCursor(li,true);   // plain click = move the keyboard cursor here (selection is ⌘-click / Select mode)
     });
     list.addEventListener("contextmenu",(e)=>{ const li=e.target.closest("li.row"); if(!li) return; e.preventDefault(); showCtx(e.clientX,e.clientY,playOrder[+li.dataset.i]); });
-    let _hoverLi=null;
-    list.addEventListener("mouseover",(e)=>{ const li=e.target.closest("li.row"); if(li&&li!==_hoverLi){ _hoverLi=li; prefetch(playOrder[+li.dataset.i]); } });
+    // NB: no hover prefetch. Sweeping the mouse across a big cloud library used to
+    // queue a full download per row crossed, which could wedge Dropbox/FileProvider
+    // machine-wide. Downloads are explicit now: play, the cloud button, or Download all.
     list.addEventListener("dragstart",(e)=>{
       const li=e.target.closest("li.row"); if(!li) return;
       const rec=playOrder[+li.dataset.i]; if(!rec){ e.preventDefault(); return; }

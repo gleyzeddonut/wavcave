@@ -143,9 +143,18 @@ final class WavCaveServer {
 
     private var allowed = Set<String>()          // folders we may read/reveal
     private let allowedLock = NSLock()
-    private var prefetchSeen = Set<String>()
-    private let prefetchLock = NSLock()
     private var listenFD: Int32 = -1
+
+    // Prefetch (cloud-file download) worker pool. Materializing Dropbox/iCloud
+    // placeholders is expensive kernel-level work: an unbounded fan-out can wedge
+    // FileProvider for the WHOLE machine (every app's file I/O stalls until reboot).
+    // So: a fixed pool of 3 workers drains an explicit queue, nothing else ever
+    // reads a dataless file implicitly.
+    private var pfQueue = [String]()
+    private var pfInFlight = Set<String>()
+    private let pfCond = NSCondition()
+    // afconvert decodes are CPU/IO heavy; never run more than 2 at once.
+    private let peaksGate = DispatchSemaphore(value: 2)
 
     private var scansDir: String { dataDir + "/scans" }
     private var peaksDir: String { dataDir + "/peaks" }
@@ -186,7 +195,24 @@ final class WavCaveServer {
         }
         listenFD = fd
         writeTokenFile()
+        for _ in 0..<3 { Thread.detachNewThread { [weak self] in self?.prefetchWorker() } }
         Thread.detachNewThread { [weak self] in self?.acceptLoop() }
+    }
+
+    /// Long-lived worker: pulls one queued path at a time and reads it end-to-end,
+    /// which forces the cloud provider to download it. Bounded by the pool size.
+    private func prefetchWorker() {
+        while true {
+            pfCond.lock()
+            while pfQueue.isEmpty { pfCond.wait() }
+            let path = pfQueue.removeFirst()
+            pfCond.unlock()
+            if let fh = FileHandle(forReadingAtPath: path) {
+                while let d = try? fh.read(upToCount: 1 << 20), !d.isEmpty {}
+                try? fh.close()
+            }
+            pfCond.lock(); pfInFlight.remove(path); pfCond.unlock()
+        }
     }
 
     func stop() {
@@ -447,8 +473,13 @@ final class WavCaveServer {
     }
 
     private func apiPeaks(_ req: HTTPRequest, _ fd: Int32) {
-        guard let t = req.query["path"], !t.isEmpty, isAllowedPath(t), statPath(t)?.isFile == true else {
+        guard let t = req.query["path"], !t.isEmpty, isAllowedPath(t), let st = statPath(t), st.isFile else {
             return sendJSON(fd, ["peaks": [], "error": "forbidden"], code: 403)
+        }
+        // Never force a cloud download just to draw a waveform: the client keeps
+        // its placeholder and retries once the file is local (e.g. after playing it).
+        if isOnlineOnly(st) {
+            return sendJSON(fd, ["peaks": [], "online": true])
         }
         sendJSON(fd, ["peaks": getPeaks(t)])
     }
@@ -493,21 +524,13 @@ final class WavCaveServer {
         guard let t = req.query["path"], !t.isEmpty, isAllowedPath(t), statPath(t)?.isFile == true else {
             return sendJSON(fd, ["error": "forbidden"], code: 403)
         }
-        prefetchLock.lock()
-        let fresh = !prefetchSeen.contains(t)
-        if fresh { prefetchSeen.insert(t) }
-        prefetchLock.unlock()
-        if fresh {
-            DispatchQueue.global(qos: .utility).async { [weak self] in
-                // reading a cloud file forces it to download
-                if let fh = FileHandle(forReadingAtPath: t) {
-                    while let d = try? fh.read(upToCount: 1 << 20), !d.isEmpty {}
-                    try? fh.close()
-                }
-                guard let self = self else { return }
-                self.prefetchLock.lock(); self.prefetchSeen.remove(t); self.prefetchLock.unlock()
-            }
+        pfCond.lock()
+        if !pfInFlight.contains(t) {
+            pfInFlight.insert(t)
+            pfQueue.append(t)
+            pfCond.signal()
         }
+        pfCond.unlock()
         sendJSON(fd, ["ok": true])
     }
 
@@ -663,7 +686,9 @@ final class WavCaveServer {
            let peaks = c["peaks"] as? [Double] {
             return peaks
         }
+        peaksGate.wait()
         let peaks = computePeaks(path)
+        peaksGate.signal()
         do {
             try FileManager.default.createDirectory(atPath: peaksDir, withIntermediateDirectories: true)
             let data = try JSONSerialization.data(withJSONObject: ["mtime": Int64(st.mtime), "size": st.size, "peaks": peaks])

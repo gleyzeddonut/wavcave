@@ -378,3 +378,61 @@ def test_reveal_forbidden_outside_roots(srv):
     with pytest.raises(urllib.error.HTTPError) as e:
         srv.get("/api/reveal", path="/etc/hosts")
     assert e.value.code == 403
+
+
+# ---------- online-only (cloud placeholder) safety ----------
+# A sparse file on APFS has st_blocks*512 < st_size, exactly like a Dropbox
+# placeholder, so it exercises the same server paths without any cloud account.
+
+def make_sparse(path, mb=64):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"RIFF\x00\x00\x00\x00WAVE")
+        f.seek(mb * 1024 * 1024)
+        f.write(b"\x00")
+
+
+@pytest.fixture(scope="session")
+def cloud_root(tmp_path_factory):
+    root = tmp_path_factory.mktemp("cloudlib")
+    make_sparse(str(root / "Bounces/huge cloud bounce.wav"))
+    st = os.stat(root / "Bounces/huge cloud bounce.wav")
+    if st.st_blocks * 512 >= st.st_size:
+        pytest.skip("filesystem does not create sparse files")
+    return root
+
+
+def test_scan_marks_online_only(srv, cloud_root):
+    j = scan(srv, cloud_root)
+    assert len(j["items"]) == 1 and j["items"][0]["online"] is True
+
+
+def test_status_reports_online_only(srv, cloud_root):
+    scan(srv, cloud_root)
+    p = str(cloud_root / "Bounces/huge cloud bounce.wav")
+    assert srv.get_json("/api/status", path=p) == {"online": True}
+
+
+def test_peaks_never_materialize_online_only_files(srv, cloud_root):
+    # computing a waveform must NOT force a cloud download: no afconvert run,
+    # empty peaks, and the client is told why
+    scan(srv, cloud_root)
+    p = str(cloud_root / "Bounces/huge cloud bounce.wav")
+    j = srv.get_json("/api/peaks", path=p)
+    assert j == {"peaks": [], "online": True}
+    # and no peaks cache entry was written for it
+    import hashlib
+    h = hashlib.sha1(os.path.realpath(p).encode()).hexdigest()
+    assert not (srv.data_dir / "peaks" / (h + ".json")).exists()
+
+
+def test_prefetch_flood_stays_responsive(srv, cloud_root):
+    # 30 rapid prefetch requests must be accepted instantly (bounded worker
+    # pool drains them; the request itself never blocks on file reads)
+    scan(srv, cloud_root)
+    p = str(cloud_root / "Bounces/huge cloud bounce.wav")
+    start = time.time()
+    for _ in range(30):
+        assert srv.get_json("/api/prefetch", path=p) == {"ok": True}
+    assert srv.get_json("/api/ping") == {"ok": True}
+    assert time.time() - start < 5
