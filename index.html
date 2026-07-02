@@ -1856,8 +1856,8 @@
     body.querySelectorAll("[data-pin]").forEach(b=>b.onclick=()=>{ pinnedHeads.set(key,b.dataset.pin); savePinned(); render(); openDetail(rec); });
     body.querySelectorAll("[data-reveal]").forEach(b=>b.onclick=()=>{ const f=files.find(x=>x.abs===b.dataset.reveal); if(f) reveal(f); });
     body.querySelectorAll(".dt-ver").forEach(v=>v.addEventListener("dragstart",(e)=>{ if(DEMO){ e.preventDefault(); return; } const f=files.find(x=>x.abs===v.dataset.abs); if(f){ e.dataTransfer.setData("DownloadURL", dlUrl(f)); e.dataTransfer.effectAllowed="copy"; } }));
-    const ec=$("dtEditColl"); if(ec) ec.onclick=(e)=>{ closeDetail(); showCollectionEditor(head, Math.max(20,e.clientX-220), Math.min(e.clientY, window.innerHeight-360)); };
-    const et=$("dtEditTags"); if(et) et.onclick=(e)=>{ closeDetail(); showCollectionEditor(head, Math.max(20,e.clientX-220), Math.min(e.clientY, window.innerHeight-360)); };
+    const ec=$("dtEditColl"); if(ec) ec.onclick=(e)=>{ e.stopPropagation(); closeDetail(); showCollectionEditor(head, Math.max(20,e.clientX-220), Math.min(e.clientY, window.innerHeight-360)); };
+    const et=$("dtEditTags"); if(et) et.onclick=(e)=>{ e.stopPropagation(); closeDetail(); showCollectionEditor(head, Math.max(20,e.clientX-220), Math.min(e.clientY, window.innerHeight-360)); };
     const dp=$("dtPath"); if(dp) dp.onclick=()=>reveal(head);
     $("detail").classList.add("show");
   }
