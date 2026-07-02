@@ -465,7 +465,7 @@
   .sb-item.active .sb-ct{ color:#0a84ff; }
   .sb-art{ padding-left:30px; }
   /* keyboard-first library: native-button resets + visible keyboard focus */
-  button.play, button.sb-item{ margin:0; font:inherit; }
+  button.play, button.sb-item{ margin:0; font-family:inherit; }
   button.play{ padding:0; }
   button.sb-item{ width:100%; background:transparent; border:none; }
   .row:focus{ outline:none; }
@@ -1345,10 +1345,9 @@
   }
 
   function isLinked(key){ const root=find(key); for (const k of mergeMap.keys()) if (find(k)===root) return true; return false; }
-  function selVisible(){ return selectMode || selected.size>=1; }
+  function selVisible(){ return selectMode || selected.size>=2; }
   function updateSelectionUI(){
-    const vis=selVisible();
-    [...$("list").children].forEach(li=>{ li.classList.toggle("selected", vis && selected.has(li.dataset.key)); });
+    [...$("list").children].forEach(li=>{ li.classList.toggle("selected", selected.has(li.dataset.key)); });
     const cb=$("combineBtn"); if (cb) cb.classList.toggle("on", selectMode);
     renderSelBar();
   }
@@ -1691,7 +1690,10 @@
       const cr=e.target.closest(".fpath .crumb");
       if (cr){ const si=$("search"); if(si&&si.value) si.value=""; setPathFilter(cr.dataset.path||null); return; }
       if (e.target.closest(".play")){ setCursor(li,false); playCursor(li); return; }
-      setCursor(li,true);   // plain click = move the keyboard cursor here (selection is ⌘-click / Select mode)
+      setCursor(li,true);   // plain click selects just this row (⌘-click builds a multi-selection)
+      selected.clear();
+      if (li.dataset.key) selected.add(li.dataset.key);
+      updateSelectionUI();
     });
     list.addEventListener("contextmenu",(e)=>{ const li=e.target.closest("li.row"); if(!li) return; e.preventDefault(); showCtx(e.clientX,e.clientY,playOrder[+li.dataset.i]); });
     // NB: no hover prefetch. Sweeping the mouse across a big cloud library used to
