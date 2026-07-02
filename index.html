@@ -44,7 +44,6 @@
   .reel.spin{animation:spin 3.4s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
   .brand .name{font-family:var(--display); font-weight:600; font-size:21px; letter-spacing:.01em; line-height:1; white-space:nowrap;}
-  .brand .tag{font-family:var(--mono); font-size:10.5px; color:var(--ink-2); margin-top:4px; letter-spacing:.02em; white-space:nowrap;}
   .grow{flex:1;}
 
   .pathchip{
@@ -614,7 +613,6 @@
       <div class="reel" id="reel"><span class="sf sf-wave"></span></div>
       <div style="min-width:0;">
         <div class="name">WavCave</div>
-        <div class="tag mono">every bounced .wav / .mp3, in one place</div>
       </div>
     </div>
     <div class="grow"></div>
@@ -1011,7 +1009,7 @@
       const r=await fetch(api("/api/pick")); const j=await r.json();
       if (j.cancelled || !j.path){ status(""); return; }
       addRoot(j.path);
-    } catch(e){ status("Couldn\u2019t open the picker. Is the app server running?"); }
+    } catch(e){ status("Couldn\u2019t open the folder picker \u2014 try again in a moment."); }
   }
   function addRoot(p){
     p=p.replace(/\/+$/,"");
@@ -1122,7 +1120,7 @@
     if(!rec) return;
     if (DEMO){ status("Reveal in Finder works when you run the app."); return; }
     try{ await fetch(api("/api/reveal?path="+encodeURIComponent(rec.abs))); }
-    catch(e){ status("Couldn\u2019t reveal file."); }
+    catch(e){ status("Couldn\u2019t show this file in Finder \u2014 it may have moved or been deleted."); }
   }
 
   /* ---------- cloud prefetch ---------- */
@@ -1314,7 +1312,7 @@
         : activeCollection ? `This folder is empty \u2014 drag songs onto it in the sidebar to add them.`
         : (starredOnly||nav.kind==="starred") ? "No starred songs yet &mdash; tap the &#9734; on a song to keep it close."
         : (nav.kind==="context"||nav.kind==="artist") ? `Nothing here with the current filters.`
-        : q ? `Nothing matches \u201c${esc(q)}\u201d.` : Object.keys(tok).length ? "Nothing matches the current search filters." : "No <code>.wav</code> / <code>.mp3</code> files found inside a <code>bounce</code> / <code>bounces</code> folder.";
+        : q ? `Nothing matches \u201c${esc(q)}\u201d.` : Object.keys(tok).length ? "Nothing matches the current search filters." : `No <code>.wav</code> / <code>.mp3</code> files found inside a <code>${esc((keywords[0]&&keywords[0].word)||"bounce")}</code> folder \u2014 you can change which folder names count in Settings (\u2318,).`;
       empty.innerHTML = msg + (anyFilter ? `<div class="empty-actions"><button class="btn" id="emptyReset">Clear all filters &amp; show everything</button></div>` : "");
       const er=$("emptyReset"); if(er) er.onclick=()=>{ resetNav(); starredOnly=false; const si=$("search"); if(si) si.value=""; renderPathFilterBar(); render(); status(""); };
     } else {
@@ -1791,7 +1789,7 @@
   window.bfUpdate = (ver,notes)=>{ setUpdVer=ver; const b=$("updateBar"); if(b){ b.dataset.ver=ver; b.dataset.mode=""; $("updateMsg").innerHTML="WavCave <b>"+esc(String(ver))+"</b> is available."; const btn=$("updateBtn"); btn.textContent="Update"; btn.disabled=false; $("updateLater").style.display=""; } setUpdApply("available"); if(!_setOpen() && b){ b.classList.add("show"); } };
   window.bfUpdateReady = ()=>{ _updGotReply(); const b=$("updateBar"); if(b){ $("updateMsg").innerHTML="Update downloaded \u2014 restart to finish."; b.dataset.mode="restart"; const btn=$("updateBtn"); btn.textContent="Restart"; btn.disabled=false; $("updateLater").style.display="none"; } setUpdApply("ready"); if(!_setOpen() && b){ b.classList.add("show"); } };
   window.bfUpdateError = ()=>{ _updGotReply(); const b=$("updateBar"); if(b){ $("updateMsg").textContent="Update failed \u2014 try again later."; b.dataset.mode=""; const btn=$("updateBtn"); btn.textContent="Retry"; btn.disabled=false; } setUpdApply("available"); const m=$("setUpdateMsg"); if(m) m.textContent="Update failed \u2014 try again."; };
-  window.bfUpdateNone = (uptodate)=>{ const m=uptodate?"You\u2019re on the latest version.":"Couldn\u2019t check for updates right now."; status(m); const sm=$("setUpdateMsg"); if(sm) sm.textContent=m; };
+  window.bfUpdateNone = (uptodate)=>{ const m=uptodate?"You\u2019re on the latest version.":"Couldn\u2019t check for updates \u2014 check your connection and try again."; status(m); const sm=$("setUpdateMsg"); if(sm) sm.textContent=m; };
   if ($("updateBtn")) $("updateBtn").addEventListener("click", ()=>{
     const b=$("updateBar"), btn=$("updateBtn");
     if (b.dataset.mode==="restart"){ bfSend({action:"restart"}); $("updateMsg").textContent="Restarting\u2026"; btn.disabled=true; $("updateLater").style.display="none"; }
@@ -2068,7 +2066,7 @@
     }
     if (!roots.length){ render(); return; }
     if (await loadCachedFolders()){
-      status("Showing your saved library \u2014 click Rescan to check for new bounces.");
+      status("Showing your saved library \u2014 new bounces are picked up automatically.");
     } else {
       loadAllFolders();   // first run (nothing cached yet): scan once
     }
