@@ -1455,18 +1455,25 @@
     const key=groupKey(rec.name);
     const checks=collections.map(c=>`<label class="ctx-check"><input type="checkbox" data-cid="${esc(c.id)}" ${c.keys.includes(key)?"checked":""}> ${esc(c.name)}<span class="ctx-sub" style="margin-left:auto">${c.keys.length}</span></label>`).join("");
     const tags=(songTags.get(key)||[]).join(", ");
+    const curAi=aiTags.get(key)||[];
     ctx.innerHTML=`<div class="ctx-head">Collections</div>`
       + (checks||`<div class="ctx-sub" style="padding:2px 12px 6px">No collections yet \u2014 make one below.</div>`)
       + `<div class="ctx-row"><input id="ctxNewColl" class="ctx-input" placeholder="New collection\u2026" spellcheck="false" autocomplete="off" /><button class="ctx-btn primary" id="ctxNewCollAdd">Add</button></div>`
       + `<div class="ctx-sep"></div><div class="ctx-head">Tags</div>`
       + `<input id="ctxTags" class="ctx-input" placeholder="tag, tag\u2026" value="${esc(tags)}" spellcheck="false" autocomplete="off" />`
+      + (curAi.length?`<div class="ctx-head" style="padding-top:6px">AI tags \u2014 click to remove</div><div class="ctx-tags">${curAi.map(t=>`<button type="button" class="ctx-tag on ai" data-ai="${esc(t)}">\u2726 ${esc(t)}</button>`).join("")}</div>`:"")
       + `<div class="ctx-row"><button class="ctx-btn primary" id="ctxCollDone">Done</button></div>`;
     ctx.querySelectorAll("input[data-cid]").forEach(cb=>cb.onchange=()=>{ toggleInCollection(cb.dataset.cid,key); buildCollSel(); });
     $("ctxNewCollAdd").onclick=()=>{ const n=$("ctxNewColl").value.trim(); if(n){ const id=newCollection(n); toggleInCollection(id,key); buildCollSel(); showCollectionEditor(rec,x,y); } };
-    const done=()=>{ const t=$("ctxTags").value.split(",").map(x=>x.trim()).filter(Boolean); if(t.length) songTags.set(key,t); else songTags.delete(key); saveTags(); hideCtx(); render(); };
+    const done=()=>{ const t=$("ctxTags").value.split(",").map(x=>x.trim()).filter(Boolean); if(t.length) songTags.set(key,t); else songTags.delete(key);
+      const low=new Set(t.map(x=>x.toLowerCase()));
+      const keptAi=(aiTags.get(key)||[]).filter(x=>!low.has(x.toLowerCase()));
+      if(keptAi.length) aiTags.set(key,keptAi); else aiTags.delete(key);
+      saveTags(); saveAiTags(); hideCtx(); render(); };
     $("ctxCollDone").onclick=done;
     $("ctxNewColl").addEventListener("keydown",e=>{ e.stopPropagation(); if(e.key==="Enter"){ e.preventDefault(); $("ctxNewCollAdd").click(); } });
     $("ctxTags").addEventListener("keydown",e=>{ e.stopPropagation(); if(e.key==="Enter"){ e.preventDefault(); done(); } });
+    ctx.querySelectorAll("[data-ai]").forEach(b=>b.onclick=()=>{ const t=b.dataset.ai; const list=(aiTags.get(key)||[]).filter(x=>x!==t); if(list.length) aiTags.set(key,list); else aiTags.delete(key); saveAiTags(); render(); showCollectionEditor(rec,x,y); });
     ctx.style.display="block";
     ctx.style.left=Math.min(x,window.innerWidth-ctx.offsetWidth-8)+"px";
     ctx.style.top=Math.min(y,window.innerHeight-ctx.offsetHeight-8)+"px";
