@@ -1562,7 +1562,7 @@
     if(!localStorage.getItem("bf_gemini_key")){ tagStatus("Add a Gemini API key above first."); return; }
     const keys=allGroups().map(g=>g.key).filter(k=>!(aiTags.get(k)||[]).length && !sessionSkip.has(k));
     if(!keys.length){ tagStatus("Every song already has AI tags."); return; }
-    batchRun={cancel:false,done:0,total:keys.length,failed:0};
+    batchRun={cancel:false,done:0,total:keys.length,failed:0,skipped:0};
     updateBatchBtn();
     const worker=async()=>{ while(keys.length && !batchRun.cancel){
       const k=keys.shift();
@@ -1571,16 +1571,24 @@
         for(let s=30;s>0 && !batchRun.cancel;s--){ tagStatus(`Rate limited — resuming in ${s}s… (${batchRun.done}/${batchRun.total})`); await sleep(1000); }
         if(!batchRun.cancel) res=await autotagKey(k);
       }
-      if(res.kind==="decode_failed") sessionSkip.add(k);
-      if(res.kind==="no_key"){ batchRun.cancel=true; openSettings(); }
-      if(res.kind!=="ok") batchRun.failed++;
+      if(res.kind==="decode_failed"){ sessionSkip.add(k); batchRun.skipped++; }
+      else if(res.kind==="no_key"){ batchRun.cancel=true; openSettings(); batchRun.failed++; }
+      else if(res.kind!=="ok") batchRun.failed++;
       batchRun.done++;
       tagStatus(`Auto-tagging ${batchRun.done}/${batchRun.total}…`);
       if(batchRun.done%10===0) render();
     }};
-    await Promise.all([worker(),worker()]);
-    const done=batchRun; batchRun=null; updateBatchBtn(); render();
-    tagStatus(done.cancel?`Auto-tagging stopped (${done.done} of ${done.total} processed).`:`Auto-tagging finished: ${done.done-done.failed} tagged, ${done.failed} skipped.`);
+    try{ await Promise.all([worker(),worker()]); }
+    catch(e){ try{ console.error("autotag batch:", e); }catch(_){} }
+    finally{
+      const done=batchRun; batchRun=null; updateBatchBtn(); render();
+      if(done){
+        const bits=[`${done.done-done.failed-done.skipped} tagged`];
+        if(done.skipped) bits.push(`${done.skipped} skipped (couldn’t decode)`);
+        if(done.failed) bits.push(`${done.failed} failed`);
+        tagStatus(done.cancel?`Auto-tagging stopped (${done.done} of ${done.total} processed).`:`Auto-tagging finished: ${bits.join(", ")}.`);
+      }
+    }
   }
   function showCtx(x,y,rec){
     if (!rec) return;
