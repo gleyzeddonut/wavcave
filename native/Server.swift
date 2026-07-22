@@ -10,6 +10,7 @@
 import Foundation
 import CryptoKit
 import Darwin
+import AVFoundation
 
 private let AUDIO_EXT: Set<String> = ["wav", "mp3"]
 
@@ -22,6 +23,31 @@ struct FolderKeyword {
 }
 
 private let DEFAULT_KEYWORDS = [FolderKeyword(word: "bounce", caseSensitive: false, pluralize: true)]
+
+// MARK: - AI auto-tagging (Gemini)
+
+let GEMINI_MODEL = "gemini-2.5-flash"
+
+// Controlled taxonomy: the model must pick from these lists, and anything else
+// it replies with is dropped, so tag filters never fragment into variant spellings.
+let AI_GENRES = ["hip hop", "trap", "drill", "boom bap", "lo-fi", "r&b", "soul", "funk",
+                 "pop", "indie pop", "rock", "indie rock", "punk", "metal", "folk", "country",
+                 "singer-songwriter", "jazz", "blues", "gospel", "classical", "cinematic",
+                 "ambient", "house", "deep house", "tech house", "techno", "trance", "dubstep",
+                 "drum and bass", "garage", "breakbeat", "electro", "synthwave", "edm",
+                 "disco", "reggae", "dancehall", "afrobeats", "latin", "world"]
+let AI_MOODS = ["dark", "moody", "uplifting", "chill", "aggressive", "melancholic",
+                "dreamy", "energetic", "hypnotic", "playful", "epic", "romantic"]
+
+func autotagPrompt() -> String {
+    return """
+    You are tagging a music producer's own unreleased track. Listen to the audio and reply \
+    with STRICT JSON only, no prose, exactly in the form {"genres": [...], "moods": [...]}.
+    Pick 1-2 genres, only from this list: \(AI_GENRES.joined(separator: ", ")).
+    Pick 1-2 moods, only from this list: \(AI_MOODS.joined(separator: ", ")).
+    Use the exact lowercase spellings from the lists.
+    """
+}
 
 func kwPlural(_ w: String) -> String {
     let lw = w.lowercased()
@@ -417,6 +443,7 @@ final class WavCaveServer {
         case "/api/status":     apiStatus(req, fd)
         case "/api/free":       apiFree(req, fd)
         case "/api/file":       apiFile(req, fd)
+        case "/api/autotag":    apiAutotag(req, fd)
         default:                serveStatic(req, fd)
         }
     }
@@ -555,6 +582,113 @@ final class WavCaveServer {
         var sb = stat()
         let dev = (stat(t, &sb) == 0) ? Int64(sb.st_dev) : 0
         sendJSON(fd, ["free": Int64(fs.f_bavail) * Int64(fs.f_bsize), "dev": dev])
+    }
+
+    // MARK: AI auto-tagging
+
+    /// Gemini API key: env override (dev/tests) else the UI-saved value in state.json.
+    private func geminiAPIKey() -> String? {
+        let env = ProcessInfo.processInfo.environment
+        if let k = env["BF_GEMINI_KEY"], !k.isEmpty { return k }
+        if let data = FileManager.default.contents(atPath: stateFile),
+           let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+           let k = obj["bf_gemini_key"] as? String, !k.isEmpty { return k }
+        return nil
+    }
+
+    /// Export a ~45 s mono-ish AAC clip from the middle of the track (whole track if shorter).
+    private func exportSnippet(_ path: String) -> Data? {
+        let asset = AVURLAsset(url: URL(fileURLWithPath: path))
+        let dur = CMTimeGetSeconds(asset.duration)
+        guard dur.isFinite, dur > 0,
+              let ex = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else { return nil }
+        let win = min(45.0, dur)
+        let start = max(0, (dur - win) / 2)
+        let tmp = NSTemporaryDirectory() + "wavcave-clip-\(UUID().uuidString).m4a"
+        defer { try? FileManager.default.removeItem(atPath: tmp) }
+        ex.outputURL = URL(fileURLWithPath: tmp)
+        ex.outputFileType = .m4a
+        ex.timeRange = CMTimeRange(start: CMTime(seconds: start, preferredTimescale: 600),
+                                   duration: CMTime(seconds: win, preferredTimescale: 600))
+        let sem = DispatchSemaphore(value: 0)
+        ex.exportAsynchronously { sem.signal() }
+        sem.wait()
+        guard ex.status == .completed else { return nil }
+        return FileManager.default.contents(atPath: tmp)
+    }
+
+    /// One provider call, isolated so a second provider can slot in later.
+    private func callGemini(apiKey: String, audio: Data) -> (code: Int, body: Data)? {
+        let base = ProcessInfo.processInfo.environment["BF_GEMINI_BASE"]
+            ?? "https://generativelanguage.googleapis.com"
+        guard let url = URL(string: "\(base)/v1beta/models/\(GEMINI_MODEL):generateContent") else { return nil }
+        var req = URLRequest(url: url, timeoutInterval: 30)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        let payload: [String: Any] = [
+            "contents": [["parts": [
+                ["text": autotagPrompt()],
+                ["inline_data": ["mime_type": "audio/mp4", "data": audio.base64EncodedString()]],
+            ]]],
+            "generationConfig": ["temperature": 0.2, "response_mime_type": "application/json"],
+        ]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        var out: (Int, Data)?
+        let sem = DispatchSemaphore(value: 0)
+        URLSession.shared.dataTask(with: req) { data, resp, _ in
+            if let http = resp as? HTTPURLResponse, let d = data { out = (http.statusCode, d) }
+            sem.signal()
+        }.resume()
+        sem.wait()
+        return out
+    }
+
+    /// Pull the model's text out of a generateContent reply and validate it
+    /// against the taxonomy. nil means the reply was unusable.
+    private func parseTags(_ body: Data) -> (genres: [String], moods: [String])? {
+        guard let obj = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
+              let cands = obj["candidates"] as? [[String: Any]],
+              let content = cands.first?["content"] as? [String: Any],
+              let parts = content["parts"] as? [[String: Any]],
+              var text = parts.first?["text"] as? String else { return nil }
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.hasPrefix("```") {
+            text = text.replacingOccurrences(of: "```json", with: "")
+                .replacingOccurrences(of: "```", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let d = text.data(using: .utf8),
+              let t = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else { return nil }
+        let g = ((t["genres"] as? [Any]) ?? []).compactMap { ($0 as? String)?.lowercased() }
+            .filter { AI_GENRES.contains($0) }
+        let m = ((t["moods"] as? [Any]) ?? []).compactMap { ($0 as? String)?.lowercased() }
+            .filter { AI_MOODS.contains($0) }
+        if g.isEmpty && m.isEmpty { return nil }
+        return (Array(g.prefix(2)), Array(m.prefix(2)))
+    }
+
+    private func apiAutotag(_ req: HTTPRequest, _ fd: Int32) {
+        guard let t = req.query["path"], !t.isEmpty, isAllowedPath(t),
+              let st = statPath(t), st.isFile else {
+            return sendJSON(fd, ["error": "forbidden", "kind": "forbidden"], code: 403)
+        }
+        guard let key = geminiAPIKey() else {
+            return sendJSON(fd, ["error": "no Gemini API key configured", "kind": "no_key"], code: 400)
+        }
+        guard let clip = exportSnippet(t) else {
+            return sendJSON(fd, ["error": "could not decode audio", "kind": "decode_failed"], code: 500)
+        }
+        guard let (code, body) = callGemini(apiKey: key, audio: clip) else {
+            return sendJSON(fd, ["error": "network unreachable", "kind": "offline"], code: 502)
+        }
+        if code == 429 {
+            return sendJSON(fd, ["error": "rate limited", "kind": "rate_limited"], code: 429)
+        }
+        guard code == 200, let tags = parseTags(body) else {
+            return sendJSON(fd, ["error": "provider error (HTTP \(code))", "kind": "provider_error"], code: 502)
+        }
+        sendJSON(fd, ["tags": ["genres": tags.genres, "moods": tags.moods]])
     }
 
     // MARK: static files

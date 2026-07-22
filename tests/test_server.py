@@ -554,3 +554,89 @@ def test_free_space_forbidden_outside_roots(srv):
     with pytest.raises(urllib.error.HTTPError) as e:
         srv.get("/api/free", path="/etc")
     assert e.value.code == 403
+
+
+# ---------- AI auto-tagging ----------
+
+def autotag(srv, path):
+    return srv.get_json("/api/autotag", path=str(path))
+
+
+def good_wav(srv):
+    return srv.library / "SongX/Bounces/song x.wav"
+
+
+def test_autotag_requires_token(ai_srv):
+    with pytest.raises(urllib.error.HTTPError) as e:
+        ai_srv.get("/api/autotag", with_token=False, path=str(good_wav(ai_srv)))
+    assert e.value.code == 401
+
+
+def test_autotag_path_outside_roots_forbidden(ai_srv):
+    code, j = get_json_err(ai_srv, "/api/autotag", path="/etc/hosts")
+    assert code == 403 and j["kind"] == "forbidden"
+
+
+def test_autotag_happy_path(ai_srv, gemini):
+    gemini.reset()
+    gemini.reply_text = json.dumps({"genres": ["house", "deep house"], "moods": ["dark"]})
+    j = autotag(ai_srv, good_wav(ai_srv))
+    assert j == {"tags": {"genres": ["house", "deep house"], "moods": ["dark"]}}
+    # the backend really sent audio inline
+    parts = gemini.last_request["contents"][0]["parts"]
+    inline = [p for p in parts if "inline_data" in p]
+    assert inline and inline[0]["inline_data"]["mime_type"] == "audio/mp4"
+    assert len(inline[0]["inline_data"]["data"]) > 1000
+    # and asked for JSON out
+    assert gemini.last_request["generationConfig"]["response_mime_type"] == "application/json"
+
+
+def test_autotag_filters_and_lowercases(ai_srv, gemini):
+    gemini.reset()
+    gemini.reply_text = json.dumps({"genres": ["HOUSE", "notarealgenre", "techno", "trance"],
+                                    "moods": ["dark", "sparkly"]})
+    j = autotag(ai_srv, good_wav(ai_srv))
+    # lowercased, out-of-taxonomy dropped, capped at 2
+    assert j["tags"] == {"genres": ["house", "techno"], "moods": ["dark"]}
+
+
+def test_autotag_strips_code_fences(ai_srv, gemini):
+    gemini.reset()
+    gemini.reply_text = "```json\n" + json.dumps({"genres": ["ambient"], "moods": []}) + "\n```"
+    j = autotag(ai_srv, good_wav(ai_srv))
+    assert j["tags"]["genres"] == ["ambient"]
+
+
+def test_autotag_junk_reply_is_provider_error(ai_srv, gemini):
+    gemini.reset()
+    gemini.reply_text = "sorry, I cannot help with that"
+    code, j = get_json_err(ai_srv, "/api/autotag", path=str(good_wav(ai_srv)))
+    assert code == 502 and j["kind"] == "provider_error"
+
+
+def test_autotag_rate_limited(ai_srv, gemini):
+    gemini.reset()
+    gemini.status = 429
+    gemini.raw_body = {"error": {"message": "quota"}}
+    code, j = get_json_err(ai_srv, "/api/autotag", path=str(good_wav(ai_srv)))
+    assert code == 429 and j["kind"] == "rate_limited"
+    gemini.reset()
+
+
+def test_autotag_undecodable_file(ai_srv, gemini):
+    gemini.reset()
+    code, j = get_json_err(ai_srv, "/api/autotag", path=str(ai_srv.library / "SongX/Bounces/bad.wav"))
+    assert code == 500 and j["kind"] == "decode_failed"
+
+
+def test_autotag_no_key(server_bin, ai_library, gemini, tmp_path_factory):
+    static = tmp_path_factory.mktemp("nk_static")
+    (static / "index.html").write_text("x")
+    s = Server(server_bin, static, tmp_path_factory.mktemp("nk_data"), TOKEN,
+               extra_env={"BF_GEMINI_BASE": gemini.base})   # no BF_GEMINI_KEY, empty state.json
+    try:
+        s.get_json("/api/scan", path=str(ai_library))
+        code, j = get_json_err(s, "/api/autotag", path=str(ai_library / "SongX/Bounces/song x.wav"))
+        assert code == 400 and j["kind"] == "no_key"
+    finally:
+        s.stop()
