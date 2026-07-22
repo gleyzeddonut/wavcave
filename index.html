@@ -1578,8 +1578,8 @@
       tagStatus(`Auto-tagging ${batchRun.done}/${batchRun.total}…`);
       if(batchRun.done%10===0) render();
     }};
-    try{ await Promise.all([worker(),worker()]); }
-    catch(e){ try{ console.error("autotag batch:", e); }catch(_){} }
+    try{ const rs=await Promise.allSettled([worker(),worker()]);
+      rs.forEach(r=>{ if(r.status==="rejected"){ try{ console.error("autotag batch:", r.reason); }catch(_){} } }); }
     finally{
       const done=batchRun; batchRun=null; updateBatchBtn(); render();
       if(done){
