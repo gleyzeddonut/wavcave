@@ -11,6 +11,7 @@ import json
 import os
 import socket
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -19,6 +20,7 @@ import wave
 import array
 import math
 import shutil
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
@@ -70,11 +72,13 @@ def library(tmp_path_factory):
 
 
 class Server:
-    def __init__(self, binary, root, data_dir, token):
+    def __init__(self, binary, root, data_dir, token, extra_env=None):
         self.port = free_port()
         self.token = token
         env = dict(os.environ, BF_PORT=str(self.port), BF_ROOT=str(root),
                    BF_DATA_DIR=str(data_dir), BF_TOKEN=token)
+        if extra_env:
+            env.update(extra_env)
         self.proc = subprocess.Popen([binary], env=env,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         deadline = time.time() + 10
@@ -127,6 +131,105 @@ def srv(server_bin, library, tmp_path_factory):
     s.data_dir = data
     yield s
     s.stop()
+
+
+# ---------- fake Gemini backend ----------
+
+class FakeGemini:
+    """Tiny local stand-in for the Gemini generateContent API.
+
+    Tests mutate .status / .reply_text / .raw_body to script the next reply,
+    and read .last_request to assert what the backend sent.
+    """
+    def __init__(self):
+        self.status = 200
+        self.reply_text = json.dumps({"genres": ["house"], "moods": ["dark"]})
+        self.raw_body = None
+        self.last_request = None
+        fake = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                n = int(self.headers.get("Content-Length", 0))
+                try:
+                    fake.last_request = json.loads(self.rfile.read(n))
+                except Exception:
+                    fake.last_request = None
+                if fake.raw_body is not None:
+                    body = fake.raw_body
+                else:
+                    body = {"candidates": [{"content": {"parts": [{"text": fake.reply_text}]}}]}
+                data = json.dumps(body).encode()
+                self.send_response(fake.status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *a):
+                pass
+
+        self.httpd = HTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.httpd.server_address[1]
+        self.base = "http://127.0.0.1:%d" % self.port
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def reset(self):
+        self.status = 200
+        self.reply_text = json.dumps({"genres": ["house"], "moods": ["dark"]})
+        self.raw_body = None
+        self.last_request = None
+
+    def stop(self):
+        self.httpd.shutdown()
+
+
+@pytest.fixture(scope="session")
+def gemini():
+    g = FakeGemini()
+    yield g
+    g.stop()
+
+
+@pytest.fixture(scope="session")
+def ai_library(tmp_path_factory):
+    lib = tmp_path_factory.mktemp("ai_library")
+    make_wav(str(lib / "SongX/Bounces/song x.wav"), seconds=2)
+    bad = lib / "SongX/Bounces/bad.wav"
+    bad.write_bytes(b"this is not audio at all, just junk bytes")
+    return lib
+
+
+@pytest.fixture(scope="session")
+def ai_srv(server_bin, ai_library, gemini, tmp_path_factory):
+    static = tmp_path_factory.mktemp("ai_static")
+    (static / "index.html").write_text("<html>wavcave test</html>")
+    data = tmp_path_factory.mktemp("ai_data")
+    s = Server(server_bin, static, data, TOKEN,
+               extra_env={"BF_GEMINI_BASE": gemini.base, "BF_GEMINI_KEY": "test-gemini-key"})
+    s.library = ai_library
+    s.data_dir = data
+    s.get_json("/api/scan", path=str(ai_library))   # allow-lists the library for /api/autotag
+    yield s
+    s.stop()
+
+
+def get_json_err(srv, route, **params):
+    """GET a route expected to fail; return (http_status, parsed_json_body)."""
+    with pytest.raises(urllib.error.HTTPError) as e:
+        srv.get(route, **params)
+    return e.value.code, json.loads(e.value.read())
+
+
+def test_fake_gemini_stub_works(gemini):
+    gemini.reset()
+    req = urllib.request.Request(gemini.base + "/v1beta/models/x:generateContent",
+                                 data=b'{"contents":[]}', method="POST",
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=5) as r:
+        j = json.loads(r.read())
+    assert "house" in j["candidates"][0]["content"]["parts"][0]["text"]
+    assert gemini.last_request == {"contents": []}
 
 
 def scan(srv, path, kw=None):
