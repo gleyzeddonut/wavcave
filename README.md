@@ -2,7 +2,7 @@
 
 A native macOS app that surfaces every bounced `.wav` / `.mp3` sitting inside a
 `bounces` folder (or any folder keywords you configure) across your project
-folders — group versions, audition with a waveform, sort by artist, and more.
+folders — group versions, audition with a waveform, sort by artist, auto-tag genres with AI, and more.
 Everything stays on your machine: the backend is compiled into the app itself
 (no Python, no dependencies) and a WKWebView shows the UI.
 
@@ -17,6 +17,12 @@ Everything stays on your machine: the backend is compiled into the app itself
   - `release.sh` — bumps the version, builds, and publishes a GitHub release.
   - `Info.plist`, `appicon.icns`.
 - `tests/` — pytest suite that boots the real backend and exercises every endpoint.
+
+## AI auto-tagging (optional, online)
+Right-click a song → **Auto-tag with AI**, or Settings → **Tag library with AI**,
+to tag songs by genre + mood. This sends a ~45 s clip of each song to Google
+Gemini and needs a free API key (Settings → AI auto-tagging). It is the one
+feature that talks to the internet — everything else stays local.
 
 ## Build
 ```sh

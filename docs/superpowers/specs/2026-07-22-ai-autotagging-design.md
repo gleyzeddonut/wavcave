@@ -1,7 +1,7 @@
 # AI Auto-Tagging (Genre + Mood) — Design
 
 Date: 2026-07-22
-Status: Approved direction, pending spec review
+Status: Implemented 2026-07-22
 
 ## Purpose
 
