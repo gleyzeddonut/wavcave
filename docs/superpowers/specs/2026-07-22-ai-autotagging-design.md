@@ -30,7 +30,7 @@ Backend-driven. `Server.swift` gains one endpoint:
 ```
 GET /autotag?path=<song file path>
 → 200 {"tags": {"genres": ["house", "deep house"], "moods": ["dark", "hypnotic"]}}
-→ 4xx/5xx {"error": "<reason>", "kind": "no_key" | "rate_limited" | "decode_failed" | "provider_error" | "offline"}
+→ 4xx/5xx {"error": "<reason>", "kind": "no_key" | "rate_limited" | "decode_failed" | "provider_error" | "offline" | "online"}
 ```
 
 The endpoint, like all others, requires the per-launch auth token.
@@ -132,3 +132,12 @@ energetic, hypnotic, playful, epic, romantic.
 - Automatic/background tagging on scan.
 - Mood-based smart playlists, "sounds like" search, BPM/key detection.
 - Editing the taxonomy from the UI.
+
+## Implementation notes (deviations from this spec)
+
+- Rate-limit backoff is a flat 30 s wait, retried up to 4× per song — not exponential.
+- Snippet export uses the fixed `AVAssetExportPresetAppleM4A` preset (stereo), not
+  mono ~64 kbps; payloads are larger than the ~300 KB estimate but far under limits.
+- The batch summary reports counts only; a per-song failure list was not built.
+- Added error kind `online` (HTTP 409): the file is a cloud placeholder that hasn't
+  been downloaded; the batch counts it as skipped rather than forcing a download.

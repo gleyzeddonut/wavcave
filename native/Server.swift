@@ -366,7 +366,10 @@ final class WavCaveServer {
         case 401: return "Unauthorized"
         case 403: return "Forbidden"
         case 404: return "Not Found"
+        case 409: return "Conflict"
+        case 429: return "Too Many Requests"
         case 500: return "Internal Server Error"
+        case 502: return "Bad Gateway"
         default: return "OK"
         }
     }
@@ -534,6 +537,7 @@ final class WavCaveServer {
             let data = try JSONSerialization.data(withJSONObject: obj)
             try data.write(to: URL(fileURLWithPath: tmp))
             _ = try FileManager.default.replaceItemAt(URL(fileURLWithPath: stateFile), withItemAt: URL(fileURLWithPath: tmp))
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stateFile)
             sendJSON(fd, ["ok": true])
         } catch {
             sendJSON(fd, ["error": String(describing: error)], code: 400)
@@ -677,6 +681,11 @@ final class WavCaveServer {
         guard let t = req.query["path"], !t.isEmpty, isAllowedPath(t),
               let st = statPath(t), st.isFile else {
             return sendJSON(fd, ["error": "forbidden", "kind": "forbidden"], code: 403)
+        }
+        // Never implicitly materialize a cloud-dataless file (see the prefetch
+        // pool comment above): tagging waits until the file is downloaded.
+        if isOnlineOnly(st) {
+            return sendJSON(fd, ["error": "file is online-only (not downloaded)", "kind": "online"], code: 409)
         }
         guard let key = geminiAPIKey() else {
             return sendJSON(fd, ["error": "no Gemini API key configured", "kind": "no_key"], code: 400)

@@ -146,10 +146,12 @@ class FakeGemini:
         self.reply_text = json.dumps({"genres": ["house"], "moods": ["dark"]})
         self.raw_body = None
         self.last_request = None
+        self.last_headers = None
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
+                fake.last_headers = {k.lower(): v for k, v in self.headers.items()}
                 n = int(self.headers.get("Content-Length", 0))
                 try:
                     fake.last_request = json.loads(self.rfile.read(n))
@@ -179,6 +181,7 @@ class FakeGemini:
         self.reply_text = json.dumps({"genres": ["house"], "moods": ["dark"]})
         self.raw_body = None
         self.last_request = None
+        self.last_headers = None
 
     def stop(self):
         self.httpd.shutdown()
@@ -306,6 +309,13 @@ def test_token_written_to_data_dir(srv):
     tok_file = srv.data_dir / "token"
     assert tok_file.read_text().strip() == TOKEN
     assert (tok_file.stat().st_mode & 0o777) == 0o600
+
+
+def test_state_file_written_0600(srv):
+    srv.post_json("/api/state", {"bf_x": "1"})
+    st_file = srv.data_dir / "state.json"
+    assert st_file.exists()
+    assert (st_file.stat().st_mode & 0o777) == 0o600
 
 
 def test_no_token_mode(server_bin, library, tmp_path_factory):
@@ -589,6 +599,7 @@ def test_autotag_happy_path(ai_srv, gemini):
     assert len(inline[0]["inline_data"]["data"]) > 1000
     # and asked for JSON out
     assert gemini.last_request["generationConfig"]["response_mime_type"] == "application/json"
+    assert gemini.last_headers.get("x-goog-api-key") == "test-gemini-key"
 
 
 def test_autotag_filters_and_lowercases(ai_srv, gemini):

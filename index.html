@@ -1550,7 +1550,7 @@
     }
     return {kind:j.kind||"provider_error"};
   }
-  const autotagErrMsg=(kind)=>({rate_limited:"rate limited — try again shortly", decode_failed:"couldn’t decode the audio", offline:"no internet connection", provider_error:"the AI service returned an error"}[kind]||kind);
+  const autotagErrMsg=(kind)=>({rate_limited:"rate limited — try again shortly", decode_failed:"couldn’t decode the audio", online:"the file hasn’t been downloaded from the cloud yet", offline:"no internet connection", provider_error:"the AI service returned an error"}[kind]||kind);
   const sessionSkip=new Set();   // decode_failed songs: skipped for this launch only
   let batchRun=null;             // {cancel,done,total,failed} while a batch is active
   function updateBatchBtn(){ const b=$("setTagLibrary"); if(b) b.innerHTML=batchRun?'<span class="sf sf-ban"></span>Stop tagging':'<span class="sf sf-wave"></span>Tag library with AI'; }
@@ -1571,7 +1571,7 @@
         for(let s=30;s>0 && !batchRun.cancel;s--){ tagStatus(`Rate limited — resuming in ${s}s… (${batchRun.done}/${batchRun.total})`); await sleep(1000); }
         if(!batchRun.cancel) res=await autotagKey(k);
       }
-      if(res.kind==="decode_failed"){ sessionSkip.add(k); batchRun.skipped++; }
+      if(res.kind==="decode_failed"||res.kind==="online"){ sessionSkip.add(k); batchRun.skipped++; }
       else if(res.kind==="no_key"){ batchRun.cancel=true; openSettings(); batchRun.failed++; }
       else if(res.kind!=="ok") batchRun.failed++;
       batchRun.done++;
@@ -1584,7 +1584,7 @@
       const done=batchRun; batchRun=null; updateBatchBtn(); render();
       if(done){
         const bits=[`${done.done-done.failed-done.skipped} tagged`];
-        if(done.skipped) bits.push(`${done.skipped} skipped (couldn’t decode)`);
+        if(done.skipped) bits.push(`${done.skipped} skipped (couldn’t read audio)`);
         if(done.failed) bits.push(`${done.failed} failed`);
         tagStatus(done.cancel?`Auto-tagging stopped (${done.done} of ${done.total} processed).`:`Auto-tagging finished: ${bits.join(", ")}.`);
       }
