@@ -1551,6 +1551,37 @@
     return {kind:j.kind||"provider_error"};
   }
   const autotagErrMsg=(kind)=>({rate_limited:"rate limited — try again shortly", decode_failed:"couldn’t decode the audio", offline:"no internet connection", provider_error:"the AI service returned an error"}[kind]||kind);
+  const sessionSkip=new Set();   // decode_failed songs: skipped for this launch only
+  let batchRun=null;             // {cancel,done,total,failed} while a batch is active
+  function updateBatchBtn(){ const b=$("setTagLibrary"); if(b) b.innerHTML=batchRun?'<span class="sf sf-ban"></span>Stop tagging':'<span class="sf sf-wave"></span>Tag library with AI'; }
+  const tagStatus=(m)=>{ status(m); const el=$("setTagMsg"); if(el) el.textContent=m; };
+  // Batch: every song with no AI tags, 2 workers, backoff on rate limits, cancelable.
+  async function tagLibrary(){
+    if(batchRun){ batchRun.cancel=true; tagStatus("Stopping…"); return; }
+    if(DEMO){ tagStatus("Auto-tagging isn’t available in the demo."); return; }
+    if(!localStorage.getItem("bf_gemini_key")){ tagStatus("Add a Gemini API key above first."); return; }
+    const keys=allGroups().map(g=>g.key).filter(k=>!(aiTags.get(k)||[]).length && !sessionSkip.has(k));
+    if(!keys.length){ tagStatus("Every song already has AI tags."); return; }
+    batchRun={cancel:false,done:0,total:keys.length,failed:0};
+    updateBatchBtn();
+    const worker=async()=>{ while(keys.length && !batchRun.cancel){
+      const k=keys.shift();
+      let res=await autotagKey(k), tries=0;
+      while(res.kind==="rate_limited" && !batchRun.cancel && tries++<4){
+        for(let s=30;s>0 && !batchRun.cancel;s--){ tagStatus(`Rate limited — resuming in ${s}s… (${batchRun.done}/${batchRun.total})`); await sleep(1000); }
+        if(!batchRun.cancel) res=await autotagKey(k);
+      }
+      if(res.kind==="decode_failed") sessionSkip.add(k);
+      if(res.kind==="no_key"){ batchRun.cancel=true; openSettings(); }
+      if(res.kind!=="ok") batchRun.failed++;
+      batchRun.done++;
+      tagStatus(`Auto-tagging ${batchRun.done}/${batchRun.total}…`);
+      if(batchRun.done%10===0) render();
+    }};
+    await Promise.all([worker(),worker()]);
+    const done=batchRun; batchRun=null; updateBatchBtn(); render();
+    tagStatus(done.cancel?`Auto-tagging stopped (${done.done} of ${done.total} processed).`:`Auto-tagging finished: ${done.done-done.failed} tagged, ${done.failed} skipped.`);
+  }
   function showCtx(x,y,rec){
     if (!rec) return;
     const parentAbs=rec.abs.slice(0,rec.abs.length-rec.name.length).replace(/\/$/,"");
@@ -2131,6 +2162,7 @@
   function openSettings(){
     _kwSnap=JSON.stringify(keywords); renderKwEditor($("settingsKw"));
     { const gk=$("setGeminiKey"); if(gk) gk.value=localStorage.getItem("bf_gemini_key")||""; }
+    updateBatchBtn();
     { const ag=allGroups();
       $("statSongs").textContent=ag.length.toLocaleString();
       $("statStar").textContent=ag.filter(g=>favs.has(g.key)).length.toLocaleString();
@@ -2154,6 +2186,7 @@
   { const b=$("setClose"); if(b) b.addEventListener("click", closeSettings); }
   { const b=$("setBg"); if(b) b.addEventListener("click", closeSettings); }
   { const k=$("setGeminiKey"); if(k) k.addEventListener("change", ()=>{ const v=k.value.trim(); if(v) localStorage.setItem("bf_gemini_key", v); else localStorage.removeItem("bf_gemini_key"); _syncState(); }); }
+  { const b=$("setTagLibrary"); if(b) b.addEventListener("click", ()=>tagLibrary()); }
   { const b=$("setupGo"); if(b) b.addEventListener("click", finishSetup); }
   { const b=$("setRescan"); if(b) b.addEventListener("click", ()=>{ $("settings").classList.remove("show"); keywords=keywords.filter(k=>k.word.trim()); if(!keywords.length) keywords=DEFAULT_KW(); saveKeywords(); if(roots.length&&!DEMO) loadAllFolders(); }); }
 
