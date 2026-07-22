@@ -181,6 +181,9 @@ final class WavCaveServer {
     private let pfCond = NSCondition()
     // afconvert decodes are CPU/IO heavy; never run more than 2 at once.
     private let peaksGate = DispatchSemaphore(value: 2)
+    // AVFoundation exports are similarly heavy and can hang on damaged files:
+    // bound concurrency and give each export a hard deadline.
+    private let exportGate = DispatchSemaphore(value: 2)
 
     private var scansDir: String { dataDir + "/scans" }
     private var peaksDir: String { dataDir + "/peaks" }
@@ -598,6 +601,8 @@ final class WavCaveServer {
 
     /// Export a ~45 s mono-ish AAC clip from the middle of the track (whole track if shorter).
     private func exportSnippet(_ path: String) -> Data? {
+        exportGate.wait()
+        defer { exportGate.signal() }
         let asset = AVURLAsset(url: URL(fileURLWithPath: path))
         let dur = CMTimeGetSeconds(asset.duration)
         guard dur.isFinite, dur > 0,
@@ -612,7 +617,7 @@ final class WavCaveServer {
                                    duration: CMTime(seconds: win, preferredTimescale: 600))
         let sem = DispatchSemaphore(value: 0)
         ex.exportAsynchronously { sem.signal() }
-        sem.wait()
+        if sem.wait(timeout: .now() + 120) == .timedOut { ex.cancelExport(); return nil }
         guard ex.status == .completed else { return nil }
         return FileManager.default.contents(atPath: tmp)
     }
