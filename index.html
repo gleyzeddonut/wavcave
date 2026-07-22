@@ -435,6 +435,8 @@
   .dt-chips{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
   .dt-chip{ font-size:12px; color:var(--ink); background:var(--inset); border:1px solid var(--line-2); border-radius:999px; padding:4px 11px; }
   .dt-chip.tag{ color:#0a84ff; background:rgba(10,132,255,.1); border-color:rgba(10,132,255,.2); }
+  .dt-chip.tag.ai{ opacity:.8; }
+  .ctx-tag.ai{ opacity:.85; }
   .dt-dim{ color:var(--ink-3); font-size:12.5px; }
   .dt-add{ font-size:12px; font-weight:600; color:#0a84ff; background:transparent; border:1px dashed rgba(10,132,255,.4); border-radius:999px; padding:4px 11px; cursor:pointer; }
   .dt-path{ font-family:var(--mono); font-size:11.5px; color:var(--ink-2); word-break:break-all; cursor:pointer; }
@@ -838,6 +840,10 @@
   const songTags = new Map();   // songKey -> [tags]
   const loadTags = () => { try{ const o=JSON.parse(localStorage.getItem("bf_tags")||"{}"); for(const k in o) if(Array.isArray(o[k])) songTags.set(k,o[k]); }catch(e){} };
   const saveTags = () => { try{ const o={}; songTags.forEach((v,k)=>{ if(v&&v.length) o[k]=v; }); localStorage.setItem("bf_tags", JSON.stringify(o)); }catch(e){} };
+  const aiTags = new Map();   // songKey -> [AI tags]; re-runs replace these, manual bf_tags is never touched
+  const loadAiTags = () => { try{ const o=JSON.parse(localStorage.getItem("bf_ai_tags")||"{}"); for(const k in o) if(Array.isArray(o[k])) aiTags.set(k,o[k]); }catch(e){} };
+  const saveAiTags = () => { try{ const o={}; aiTags.forEach((v,k)=>{ if(v&&v.length) o[k]=v; }); localStorage.setItem("bf_ai_tags", JSON.stringify(o)); }catch(e){} };
+  const tagsOf = (key) => { const man=songTags.get(key)||[]; const low=new Set(man.map(t=>t.toLowerCase())); return man.concat((aiTags.get(key)||[]).filter(t=>!low.has(t.toLowerCase()))); };
   const collById = (id)=>collections.find(c=>c.id===id);
   function newCollection(name){ const id="c"+Date.now().toString(36)+Math.random().toString(36).slice(2,5); collections.push({id,name,keys:[]}); saveCollections(); return id; }
   function toggleInCollection(id,key){ const c=collById(id); if(!c) return; const i=c.keys.indexOf(key); if(i>=0) c.keys.splice(i,1); else c.keys.push(key); saveCollections(); }
@@ -854,12 +860,14 @@
       if (favs.has(k)){ favs.delete(k); favs.add(canon); }
       const t=songTags.get(k);
       if (t&&t.length){ const cur=songTags.get(canon)||[]; for(const x of t) if(!cur.some(y=>y.toLowerCase()===x.toLowerCase())) cur.push(x); songTags.set(canon,cur); songTags.delete(k); }
+      const at=aiTags.get(k);
+      if (at&&at.length){ const cur=aiTags.get(canon)||[]; for(const x of at) if(!cur.some(y=>y.toLowerCase()===x.toLowerCase())) cur.push(x); aiTags.set(canon,cur); aiTags.delete(k); }
       for (const c of collections){ const idx=c.keys.indexOf(k); if(idx>=0){ if(c.keys.includes(canon)) c.keys.splice(idx,1); else c.keys[idx]=canon; } }
       if (pinnedHeads.has(k)){ if(!pinnedHeads.has(canon)) pinnedHeads.set(canon,pinnedHeads.get(k)); pinnedHeads.delete(k); }
       if (titleOverride.has(k)){ if(!titleOverride.has(canon)) titleOverride.set(canon,titleOverride.get(k)); titleOverride.delete(k); }
       if (artistOverride.has(k)){ if(!artistOverride.has(canon)) artistOverride.set(canon,artistOverride.get(k)); artistOverride.delete(k); }
     }
-    saveMerges(); saveFavs(); saveTags(); saveCollections(); savePinned(); saveTitleOverride(); saveArtistOverride();
+    saveMerges(); saveFavs(); saveTags(); saveAiTags(); saveCollections(); savePinned(); saveTitleOverride(); saveArtistOverride();
     buildCollSel();
     return true;
   }
@@ -932,7 +940,7 @@
     if (tok.artist)  out=out.filter(f=>artistLabel(f).toLowerCase().includes(tok.artist));
     if (tok.type)    out=out.filter(f=>{ const t=metaOf(f).type; return tok.type[0]==="i"?t==="inst":(tok.type[0]==="v"?t==="vocal":true); });
     if (tok.bpm){ const r=tok.bpm.match(/^(\d+)(?:-(\d+))?$/); if(r){ const lo=+r[1], hi=r[2]?+r[2]:lo, tol=r[2]?0:3; out=out.filter(f=>{ const b=metaOf(f).bpm; return b!=null && b>=lo-tol && b<=hi+tol; }); } }
-    if (tok.tag) out=out.filter(f=>{ const t=songTags.get(groupKey(f.name))||[]; return t.some(x=>x.toLowerCase().includes(tok.tag)); });
+    if (tok.tag) out=out.filter(f=>{ const t=tagsOf(groupKey(f.name)); return t.some(x=>x.toLowerCase().includes(tok.tag)); });
     return out;
   }
   const sectioned = ()=> sortMode==="artist"||sortMode==="context";
@@ -1488,16 +1496,23 @@
   function showTagPicker(rec, pos){
     const key=groupKey(rec.name);
     const cur=songTags.get(key)||[];
+    const curAi=aiTags.get(key)||[];
     const all=new Set(); songTags.forEach(v=>v.forEach(t=>all.add(t)));
     const opts=[...all].sort((a,b)=>a.localeCompare(b));
     ctx.innerHTML=`<div class="ctx-head">Tags</div>`
       + `<input id="ctxTagInput" class="ctx-input" placeholder="tag, tag\u2026" value="${esc(cur.join(", "))}" spellcheck="false" autocomplete="off" />`
       + (opts.length?`<div class="ctx-tags">${opts.map(t=>`<button type="button" class="ctx-tag ${cur.includes(t)?"on":""}" data-tag="${esc(t)}">${esc(t)}</button>`).join("")}</div>`:"")
+      + (curAi.length?`<div class="ctx-head" style="padding-top:6px">AI tags \u2014 click to remove</div><div class="ctx-tags">${curAi.map(t=>`<button type="button" class="ctx-tag on ai" data-ai="${esc(t)}">\u2726 ${esc(t)}</button>`).join("")}</div>`:"")
       + `<div class="ctx-row"><button class="ctx-btn primary" id="ctxTagDone">Done</button></div>`;
     const parse=()=>$("ctxTagInput").value.split(",").map(x=>x.trim()).filter(Boolean);
     const syncChips=()=>{ const set=new Set(parse().map(t=>t.toLowerCase())); ctx.querySelectorAll(".ctx-tag").forEach(b=>b.classList.toggle("on", set.has(b.dataset.tag.toLowerCase()))); };
-    const save=()=>{ const t=parse(); if(t.length) songTags.set(key,t); else songTags.delete(key); saveTags(); render(); refreshDetailIfOpen(rec); };
+    const save=()=>{ const t=parse(); if(t.length) songTags.set(key,t); else songTags.delete(key);
+      const low=new Set(t.map(x=>x.toLowerCase()));
+      const keptAi=(aiTags.get(key)||[]).filter(x=>!low.has(x.toLowerCase()));
+      if(keptAi.length) aiTags.set(key,keptAi); else aiTags.delete(key);
+      saveTags(); saveAiTags(); render(); refreshDetailIfOpen(rec); };
     ctx.querySelectorAll(".ctx-tag").forEach(b=>b.onclick=()=>{ const t=b.dataset.tag; const list=parse(); const i=list.findIndex(x=>x.toLowerCase()===t.toLowerCase()); if(i>=0) list.splice(i,1); else list.push(t); $("ctxTagInput").value=list.join(", "); syncChips(); });
+    ctx.querySelectorAll("[data-ai]").forEach(b=>b.onclick=()=>{ const t=b.dataset.ai; const list=(aiTags.get(key)||[]).filter(x=>x!==t); if(list.length) aiTags.set(key,list); else aiTags.delete(key); saveAiTags(); render(); refreshDetailIfOpen(rec); showTagPicker(rec,pos); });
     $("ctxTagInput").addEventListener("input", syncChips);
     ctx._onHide=save;   // clicking anywhere else commits, like the macOS tag editor
     $("ctxTagDone").onclick=()=>hideCtx();
@@ -1518,7 +1533,7 @@
     html+=`<div class="ctx-item" data-act="reveal"><span class="ctx-line"><span class="sf sf-folder"></span>Reveal in Finder</span></div>`;
     if (rec.online) html+=`<div class="ctx-item" data-act="download"><span class="ctx-line"><span class="sf sf-cloud"></span>Download from cloud</span></div>`;
     html+=`<div class="ctx-sep"></div>`;
-    { const _ks=groupKey(rec.name); const _cn=collections.filter(c=>c.keys.includes(_ks)).map(c=>c.name); const _tg=songTags.get(_ks)||[]; const _sub=[..._cn,..._tg].slice(0,3).join(", ");
+    { const _ks=groupKey(rec.name); const _cn=collections.filter(c=>c.keys.includes(_ks)).map(c=>c.name); const _tg=tagsOf(_ks); const _sub=[..._cn,..._tg].slice(0,3).join(", ");
       html+=`<div class="ctx-item" data-act="collection"><span class="ctx-line"><span class="sf sf-folderplus"></span>Add to folder / tag…</span>${_sub?`<span class="ctx-sub">in: ${esc(_sub)}</span>`:""}</div>`; }
     html+=`<div class="ctx-item" data-act="setartist"><span class="ctx-line"><span class="sf sf-person"></span>Set artist…</span><span class="ctx-sub">now: ${esc(artistLabel(rec))}</span></div>`;
     html+=`<div class="ctx-sep"></div>`;
@@ -1886,6 +1901,7 @@
     const ctxA=[contextLabel(head),artistLabel(head)].filter(x=>x&&x!=="Uncategorized"&&x!=="Unknown artist");
     const inColls=collections.filter(c=>c.keys.includes(key));
     const tags=songTags.get(key)||[];
+    const ai=(aiTags.get(key)||[]).filter(t=>!tags.some(y=>y.toLowerCase()===t.toLowerCase()));
     const totSize=files.reduce((s,f)=>s+(f.size||0),0);
     const dir=head.path.slice(0,head.path.length-head.name.length).replace(/\/$/,"");
     const vers=files.map((f,idx)=>{ const m=metaOf(f); const main=idx===0; const meta=[fmtDate(f.mtime),fmtSize(f.size),m.bpm?m.bpm+" bpm":"",m.type?(m.type==="inst"?"INST":"VOX"):""].filter(Boolean).join("  ·  ");
@@ -1901,7 +1917,7 @@
       + `<div class="dt-count">${files.length} version${files.length>1?"s":""}  ·  ${fmtSize(totSize)}  ·  drag any version out to Finder / your DAW</div>`
       + `<div class="dt-sec">Versions</div><div class="dt-vers">${vers}</div>`
       + `<div class="dt-sec">Collections</div><div class="dt-chips">${inColls.map(c=>`<span class="dt-chip">${esc(c.name)}</span>`).join("")||'<span class="dt-dim">None</span>'} <button class="dt-add" id="dtEditColl">edit…</button></div>`
-      + `<div class="dt-sec">Tags</div><div class="dt-chips">${tags.map(t=>`<span class="dt-chip tag">${esc(t)}</span>`).join("")||'<span class="dt-dim">None</span>'} <button class="dt-add" id="dtEditTags">edit…</button></div>`
+      + `<div class="dt-sec">Tags</div><div class="dt-chips">${tags.map(t=>`<span class="dt-chip tag">${esc(t)}</span>`).join("")}${ai.map(t=>`<span class="dt-chip tag ai">✦ ${esc(t)}</span>`).join("")}${(tags.length||ai.length)?"":'<span class="dt-dim">None</span>'} <button class="dt-add" id="dtEditTags">edit…</button></div>`
       + `<div class="dt-sec">Location</div><div class="dt-path" id="dtPath" title="Reveal in Finder">${esc(dir||"/")}</div>`;
     const body=$("dtBody");
     body.querySelectorAll(".dt-play").forEach(b=>b.onclick=()=>{ const f=files.find(x=>x.abs===b.dataset.abs); if(f) play(f); });
@@ -2101,13 +2117,13 @@
     sizeWave();
     const ok=await ping();
     if (!ok){
-      loadSettings(); loadFavs(); loadFolderIgnores(); loadFileIgnores(); loadMerges(); loadPinned(); loadOpenArtists(); loadArtistOverride(); loadTitleOverride(); loadCollections(); loadTags(); loadHistory(); loadKeywords();
+      loadSettings(); loadFavs(); loadFolderIgnores(); loadFileIgnores(); loadMerges(); loadPinned(); loadOpenArtists(); loadArtistOverride(); loadTitleOverride(); loadCollections(); loadTags(); loadAiTags(); loadHistory(); loadKeywords();
       DEMO=true; status(""); finish(demoData());
       $("pathchip").style.display="flex"; $("pathtext").textContent="demo library \u2014 run the app to scan your own"; $("pathchip").querySelector(".dot").style.background="var(--amber)";
       return;
     }
     await restoreState();   // pull durable state from disk into localStorage before reading it
-    loadSettings(); loadFavs(); loadFolderIgnores(); loadFileIgnores(); loadMerges(); loadPinned(); loadOpenArtists(); loadArtistOverride(); loadTitleOverride(); loadCollections(); loadTags(); loadHistory(); loadKeywords();
+    loadSettings(); loadFavs(); loadFolderIgnores(); loadFileIgnores(); loadMerges(); loadPinned(); loadOpenArtists(); loadArtistOverride(); loadTitleOverride(); loadCollections(); loadTags(); loadAiTags(); loadHistory(); loadKeywords();
     _syncState();           // make sure the disk copy reflects current settings (first-run migration)
     try{ roots=JSON.parse(localStorage.getItem("bf_roots")||"null")||[]; }catch(e){ roots=[]; }
     if (!roots.length){ try{ const old=localStorage.getItem("bf_root"); if(old) roots=[old]; }catch(e){} }
