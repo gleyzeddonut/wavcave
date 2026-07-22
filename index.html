@@ -763,6 +763,11 @@
       <div class="stat"><div class="n" id="statSize">0</div><div class="l">Size</div></div>
       <div class="stat"><div class="n star" id="statStar">0</div><div class="l">Starred</div></div>
     </div>
+    <div class="set-sec-title" style="margin-top:26px;">AI auto-tagging</div>
+    <p class="set-sub">Tags songs by genre and mood by sending a short clip of each song to Google Gemini. Needs a free API key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">Google AI Studio</a>. Audio leaves your machine only when you run it.</p>
+    <input id="setGeminiKey" class="kw-word" style="width:100%;" type="password" placeholder="Gemini API key…" spellcheck="false" autocomplete="off" />
+    <button class="btn" id="setTagLibrary" style="margin-top:12px;"><span class="sf sf-wave"></span>Tag library with AI</button>
+    <p class="set-note" id="setTagMsg"></p>
     <div class="set-sec-title" style="margin-top:26px;">Software</div>
     <button class="btn" id="setCheckUpd"><span class="sf sf-rescan"></span>Check for Updates</button>
     <p class="set-note" id="setUpdateMsg"></p>
@@ -1527,6 +1532,25 @@
     popoverAt(pos);
     setTimeout(()=>{ const i=$("ctxTagInput"); if(i) i.focus(); },0);
   }
+  /* ---------- AI auto-tagging ---------- */
+  const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+  function mainVersionOf(key){ const g=allGroups().find(x=>x.key===key); return g?g.head:null; }
+  // One song: clip + Gemini happen server-side; on success the AI pool for the
+  // song is REPLACED (manual tags untouched). Returns {kind:"ok"} or an error kind.
+  async function autotagKey(key){
+    const head=mainVersionOf(key); if(!head) return {kind:"skipped"};
+    let r;
+    try { r=await fetch(api("/api/autotag?path="+encodeURIComponent(head.abs))); }
+    catch(e){ return {kind:"offline"}; }
+    let j={}; try{ j=await r.json(); }catch(e){}
+    if(r.ok && j.tags){
+      const list=[...(j.tags.genres||[]),...(j.tags.moods||[])];
+      if(list.length){ aiTags.set(key,list); saveAiTags(); }
+      return {kind:"ok"};
+    }
+    return {kind:j.kind||"provider_error"};
+  }
+  const autotagErrMsg=(kind)=>({rate_limited:"rate limited — try again shortly", decode_failed:"couldn’t decode the audio", offline:"no internet connection", provider_error:"the AI service returned an error"}[kind]||kind);
   function showCtx(x,y,rec){
     if (!rec) return;
     const parentAbs=rec.abs.slice(0,rec.abs.length-rec.name.length).replace(/\/$/,"");
@@ -1543,6 +1567,8 @@
     { const _ks=groupKey(rec.name); const _cn=collections.filter(c=>c.keys.includes(_ks)).map(c=>c.name); const _tg=tagsOf(_ks); const _sub=[..._cn,..._tg].slice(0,3).join(", ");
       html+=`<div class="ctx-item" data-act="collection"><span class="ctx-line"><span class="sf sf-folderplus"></span>Add to folder / tag…</span>${_sub?`<span class="ctx-sub">in: ${esc(_sub)}</span>`:""}</div>`; }
     html+=`<div class="ctx-item" data-act="setartist"><span class="ctx-line"><span class="sf sf-person"></span>Set artist…</span><span class="ctx-sub">now: ${esc(artistLabel(rec))}</span></div>`;
+    { const _atg=aiTags.get(groupKey(rec.name))||[];
+      html+=`<div class="ctx-item" data-act="autotag"><span class="ctx-line"><span class="sf sf-wave"></span>Auto-tag with AI</span>${_atg.length?`<span class="ctx-sub">✦ ${esc(_atg.slice(0,3).join(", "))}</span>`:""}</div>`; }
     html+=`<div class="ctx-sep"></div>`;
     html+=`<div class="ctx-item" data-act="removefile"><span class="ctx-line"><span class="sf sf-minus"></span>Remove from list</span><span class="ctx-sub">${esc(rec.name)}</span></div>`;
     if (opts.length){
@@ -1555,6 +1581,15 @@
     const dlEl=ctx.querySelector('[data-act=download]'); if(dlEl) dlEl.onclick=()=>{ hideCtx(); prefetch(rec); status("Downloading from the cloud\u2026"); };
     ctx.querySelector('[data-act=reveal]').onclick=()=>{ hideCtx(); reveal(rec); };
     ctx.querySelector('[data-act=setartist]').onclick=()=>showArtistEditor(rec,x,y);
+    ctx.querySelector('[data-act=autotag]').onclick=async()=>{ hideCtx();
+      if(DEMO){ status("Auto-tagging isn’t available in the demo."); return; }
+      if(!localStorage.getItem("bf_gemini_key")){ openSettings(); status("Add a Gemini API key in Settings to use AI auto-tagging."); return; }
+      status("Listening to “"+songTitle(rec)+"”…");
+      const res=await autotagKey(groupKey(rec.name));
+      if(res.kind==="ok"){ render(); refreshDetailIfOpen(rec); status("Tagged “"+songTitle(rec)+"”."); }
+      else if(res.kind==="no_key"){ openSettings(); status("Add a Gemini API key in Settings to use AI auto-tagging."); }
+      else status("Auto-tag failed: "+autotagErrMsg(res.kind)+".");
+    };
     ctx.querySelector('[data-act=removefile]').onclick=()=>{ hideCtx();
       const _k=groupKey(rec.name); const stack=allFiles.filter(f=>groupKey(f.name)===_k);
       if(stack.length>1){ confirmDialog({ title:"Remove this song?", message:"This song has <b>"+stack.length+"</b> versions folded together. Remove the whole stack, or just this one file?", actions:[ {label:"Remove all "+stack.length+" versions", cls:"danger", onClick:()=>removeStack(stack)}, {label:"Remove just this file", onClick:()=>removeFile(rec)}, {label:"Cancel", cls:"ghost"} ] }); }
@@ -2095,6 +2130,7 @@
   let _kwSnap="";
   function openSettings(){
     _kwSnap=JSON.stringify(keywords); renderKwEditor($("settingsKw"));
+    { const gk=$("setGeminiKey"); if(gk) gk.value=localStorage.getItem("bf_gemini_key")||""; }
     { const ag=allGroups();
       $("statSongs").textContent=ag.length.toLocaleString();
       $("statStar").textContent=ag.filter(g=>favs.has(g.key)).length.toLocaleString();
@@ -2117,6 +2153,7 @@
   }); }
   { const b=$("setClose"); if(b) b.addEventListener("click", closeSettings); }
   { const b=$("setBg"); if(b) b.addEventListener("click", closeSettings); }
+  { const k=$("setGeminiKey"); if(k) k.addEventListener("change", ()=>{ const v=k.value.trim(); if(v) localStorage.setItem("bf_gemini_key", v); else localStorage.removeItem("bf_gemini_key"); _syncState(); }); }
   { const b=$("setupGo"); if(b) b.addEventListener("click", finishSetup); }
   { const b=$("setRescan"); if(b) b.addEventListener("click", ()=>{ $("settings").classList.remove("show"); keywords=keywords.filter(k=>k.word.trim()); if(!keywords.length) keywords=DEFAULT_KW(); saveKeywords(); if(roots.length&&!DEMO) loadAllFolders(); }); }
 
