@@ -463,6 +463,7 @@
   .sb-ct{ font-family:var(--mono); font-size:10.5px; color:var(--ink-2); flex-shrink:0; }
   .sb-item.active .sb-ct{ color:#0a84ff; }
   .sb-art{ padding-left:30px; }
+  .sb-tagdot{ width:6px; height:6px; border-radius:50%; background:currentColor; opacity:.4; flex-shrink:0; margin:0 3px; }
   /* keyboard-first library: native-button resets + visible keyboard focus */
   button.play, button.sb-item{ margin:0; font-family:inherit; }
   button.play{ padding:0; }
@@ -1298,6 +1299,7 @@
     else if (nav.kind==="artist") shown=shown.filter(f=>artistLabel(f)===nav.value && (!nav.ctx||contextLabel(f)===nav.ctx));
     else if (nav.kind==="starred") shown=shown.filter(f=>favs.has(groupKey(f.name)));
     else if (nav.kind==="recent"){ const hs=new Set(playHistory.map(h=>h.abs)); shown=shown.filter(f=>hs.has(f.abs)); }
+    else if (nav.kind==="tag"){ const tl=(nav.value||"").toLowerCase(); shown=shown.filter(f=>tagsOf(groupKey(f.name)).some(t=>t.toLowerCase()===tl)); }
 
     playOrder=[]; navOrder=[]; let html="", count=0; const cmp=cmpBy(sortMode); const artistCount={}; anyOnline=shown.some(f=>f.online);
     const artHdr=(a,cl)=>`<li class="artisthdr ${cl?"closed":""}" data-artist="${esc(a)}"><span class="sf sf-chev"></span><span class="ah-name">${esc(a)}</span><span class="ah-count">${artistCount[a]||0}</span></li>`;
@@ -1334,7 +1336,7 @@
         : pathFilter ? `No songs in \u201c${esc(pathFilter.split("/").pop())}\u201d with the current filters.`
         : activeCollection ? `This folder is empty \u2014 drag songs onto it in the sidebar to add them.`
         : (starredOnly||nav.kind==="starred") ? "No starred songs yet &mdash; tap the &#9734; on a song to keep it close."
-        : (nav.kind==="context"||nav.kind==="artist") ? `Nothing here with the current filters.`
+        : (nav.kind==="context"||nav.kind==="artist"||nav.kind==="tag") ? `Nothing here with the current filters.`
         : q ? `Nothing matches \u201c${esc(q)}\u201d.` : Object.keys(tok).length ? "Nothing matches the current search filters." : `No <code>.wav</code> / <code>.mp3</code> files found inside a <code>${esc((keywords[0]&&keywords[0].word)||"bounce")}</code> folder \u2014 you can change which folder names count in Settings (\u2318,).`;
       empty.innerHTML = msg + (anyFilter ? `<div class="empty-actions"><button class="btn" id="emptyReset">Clear all filters &amp; show everything</button></div>` : "");
       const er=$("emptyReset"); if(er) er.onclick=()=>{ resetNav(); starredOnly=false; const si=$("search"); if(si) si.value=""; renderPathFilterBar(); render(); status(""); };
@@ -2043,6 +2045,15 @@
       h+=`<button type="button" class="sb-item sb-folder${(!!activeCollection&&activeCollection===c.id)?" active":""}" data-coll="${esc(c.id)}" title="Right-click to rename or delete · drag songs here to add"><span class="sf sf-folder"></span><span class="sb-lbl">${esc(c.name)}</span><span class="sb-ct">${c.keys.length}</span></button>`;
     }
     if(!collections.length && !newFolderOpen) h+=`<div class="sb-empty">Click + or drag a song here to make one.</div>`;
+    const tagMap=new Map();   // lowercase tag -> {label, n}, across manual + AI pools
+    for(const g of groups){ for(const t of tagsOf(g.key)){ const k=t.toLowerCase(); const e=tagMap.get(k); if(e) e.n++; else tagMap.set(k,{label:t,n:1}); } }
+    if(tagMap.size){
+      h+=`<div class="sb-sec">Tags</div>`;
+      for(const k of [...tagMap.keys()].sort((a,b)=>a.localeCompare(b))){
+        const e=tagMap.get(k); const act=nav.kind==="tag"&&(nav.value||"").toLowerCase()===k;
+        h+=`<button type="button" class="sb-item sb-tag${act?" active":""}" data-tag="${esc(e.label)}"><span class="sb-tagdot"></span><span class="sb-lbl">${esc(e.label)}</span><span class="sb-ct">${e.n}</span></button>`;
+      }
+    }
     const ctxMap=new Map();
     for(const g of groups){ const cx=contextLabel(g.head); if(!ctxMap.has(cx)) ctxMap.set(cx,[]); ctxMap.get(cx).push(g); }
     const ctxs=[...ctxMap.keys()].sort((a,b)=>a.localeCompare(b));
@@ -2081,6 +2092,7 @@
     body.querySelectorAll(".sb-tw").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); const cx=el.dataset.tw; openCtx.has(cx)?openCtx.delete(cx):openCtx.add(cx); renderSidebar(); });
     body.querySelectorAll(".sb-ctx").forEach(el=>el.onclick=()=>sbNav("context",el.dataset.ctx));
     body.querySelectorAll(".sb-art").forEach(el=>el.onclick=()=>sbArt(el.dataset.art,el.dataset.actx));
+    body.querySelectorAll(".sb-tag").forEach(el=>el.onclick=()=>sbNav("tag",el.dataset.tag));
     body.querySelectorAll(".sb-ctx,.sb-art").forEach(el=>el.addEventListener("contextmenu",e=>{ e.preventDefault(); e.stopPropagation(); sidebarIgnoreMenu(e.clientX,e.clientY,el.dataset.ctx||el.dataset.art); }));
   }
   function sbNav(kind,value){ resetNav(); nav=value!=null?{kind:kind,value:value}:{kind:kind}; renderPathFilterBar(); render(); }
