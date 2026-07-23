@@ -2052,12 +2052,14 @@
     if(!collections.length && !newFolderOpen) h+=`<div class="sb-empty">Click + or drag a song here to make one.</div>`;
     const tagMap=new Map();   // lowercase tag -> {label, n}, across manual + AI pools
     for(const g of groups){ for(const t of tagsOf(g.key)){ const k=t.toLowerCase(); const e=tagMap.get(k); if(e) e.n++; else tagMap.set(k,{label:t,n:1}); } }
+    h+=`<div class="sb-sec">Tags</div>`;
     if(tagMap.size){
-      h+=`<div class="sb-sec">Tags</div>`;
       for(const k of [...tagMap.keys()].sort((a,b)=>a.localeCompare(b))){
         const e=tagMap.get(k); const act=nav.kind==="tag"&&(nav.value||"").toLowerCase()===k;
         h+=`<button type="button" class="sb-item sb-tag${act?" active":""}" data-tag="${esc(e.label)}"><span class="sb-tagdot"></span><span class="sb-lbl">${esc(e.label)}</span><span class="sb-ct">${e.n}</span></button>`;
       }
+    } else {
+      h+=`<div class="sb-empty">None yet — right-click a song to tag it, or run Settings → Tag library with AI.</div>`;
     }
     const ctxMap=new Map();
     for(const g of groups){ const cx=contextLabel(g.head); if(!ctxMap.has(cx)) ctxMap.set(cx,[]); ctxMap.get(cx).push(g); }
