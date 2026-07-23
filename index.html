@@ -1688,7 +1688,7 @@
   window.addEventListener("blur", hideCtx);
 
   /* ---------- player ---------- */
-  function play(rec){
+  function play(rec, auto){
     if(!rec) return;
     currentFile=rec;
     const dir=rec.path.slice(0,rec.path.length-rec.name.length).replace(/\/$/,"");
@@ -1702,13 +1702,19 @@
     recordPlay(rec); renderSidebar();
     cursorAbs=rec.abs;
     const idx=idxByAbs(playOrder,rec);
-    if (idx>=0){ const el=$("list").querySelector('li.row[data-i="'+idx+'"]'); if(el){ el.scrollIntoView({block:"nearest"}); visibleRows().forEach(r=>r.tabIndex=(r===el)?0:-1); } }
+    if (idx>=0){ const el=$("list").querySelector('li.row[data-i="'+idx+'"]'); if(el){
+      // Follow playback — but never yank the list while the user is browsing:
+      // on auto-advance, only scroll if the new row is within a screen of view.
+      let follow=true;
+      if (auto){ const sc=document.querySelector(".scroll"); if(sc){ const r=el.getBoundingClientRect(), v=sc.getBoundingClientRect(); follow = r.bottom>v.top-v.height && r.top<v.bottom+v.height; } }
+      if (follow) el.scrollIntoView({block:"nearest"});
+      visibleRows().forEach(r=>r.tabIndex=(r===el)?0:-1); } }
   }
-  function playNav(rec){ if(!rec) return; if (sectioned()){ const a=sectionLabel(rec); if(!openArtists.has(a)){ openArtists.add(a); saveOpenArtists(); render(); } } play(rec); }
-  const next=()=>{ const i=idxByAbs(navOrder,currentFile); if(i>-1&&i<navOrder.length-1) playNav(navOrder[i+1]); };
+  function playNav(rec, auto){ if(!rec) return; if (sectioned()){ const a=sectionLabel(rec); if(!openArtists.has(a)){ openArtists.add(a); saveOpenArtists(); render(); } } play(rec, auto); }
+  const next=(auto)=>{ const i=idxByAbs(navOrder,currentFile); if(i>-1&&i<navOrder.length-1) playNav(navOrder[i+1], auto===true); };
   const prev=()=>{ const i=idxByAbs(navOrder,currentFile); if(i>0) playNav(navOrder[i-1]); };
 
-  audio.addEventListener("ended", next);
+  audio.addEventListener("ended", ()=>next(true));
   audio.addEventListener("play", ()=>{ $("playIco").className="sf sf-pause"; markPlaying(); });
   audio.addEventListener("pause", ()=>{ $("playIco").className="sf sf-play"; markPlaying(); });
   audio.addEventListener("timeupdate", updateCounter);
@@ -1781,7 +1787,7 @@
     demoLast=performance.now();
     const step=(t)=>{
       const dt=(t-demoLast)/1000; demoLast=t;
-      if (demoPlaying){ demoTime+=dt; if(demoTime>=demoDur){ demoTime=0; next(); return; } }
+      if (demoPlaying){ demoTime+=dt; if(demoTime>=demoDur){ demoTime=0; next(true); return; } }
       updateCounter();
       demoRAF=requestAnimationFrame(step);
     };
