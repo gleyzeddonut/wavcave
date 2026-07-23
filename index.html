@@ -301,7 +301,9 @@
   .selbar .sb-txt b{ color:var(--ink); font-weight:600; }
   .btn.ghost.on{ background:rgba(10,132,255,.12); border-color:rgba(10,132,255,.3); color:#0a84ff; }
   .row.selected{ border-color:#0a84ff; box-shadow:0 0 0 2px rgba(10,132,255,.35) inset; }
-  .row{ content-visibility:auto; contain-intrinsic-size:auto 66px; }
+  /* placeholder must match the real row height exactly — a mismatch makes WebKit
+     re-correct the scroll position as each row pops in while scrolling upward */
+  .row{ content-visibility:auto; contain-intrinsic-size:auto 90px; }
 
   /* cloud row indicator */
   .cloud{ color:#0a84ff; }
