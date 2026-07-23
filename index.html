@@ -438,6 +438,9 @@
   .dt-chip.tag{ color:#0a84ff; background:rgba(10,132,255,.1); border-color:rgba(10,132,255,.2); }
   .dt-chip.tag.ai{ opacity:.8; }
   .ctx-tag.ai{ opacity:.85; }
+  .dt-chip .chip-x{ background:none; border:none; padding:0 0 0 7px; margin:0; font:inherit; font-size:10px; color:var(--ink-3); cursor:pointer; opacity:0; transition:opacity .1s; }
+  .dt-chip:hover .chip-x{ opacity:1; }
+  .dt-chip .chip-x:hover{ color:#e0443e; }
   .dt-dim{ color:var(--ink-3); font-size:12.5px; }
   .dt-add{ font-size:12px; font-weight:600; color:#0a84ff; background:transparent; border:1px dashed rgba(10,132,255,.4); border-radius:999px; padding:4px 11px; cursor:pointer; }
   .dt-path{ font-family:var(--mono); font-size:11.5px; color:var(--ink-2); word-break:break-all; cursor:pointer; }
@@ -1468,18 +1471,26 @@
       + `<div class="ctx-row"><input id="ctxNewColl" class="ctx-input" placeholder="New collection\u2026" spellcheck="false" autocomplete="off" /><button class="ctx-btn primary" id="ctxNewCollAdd">Add</button></div>`
       + `<div class="ctx-sep"></div><div class="ctx-head">Tags</div>`
       + `<input id="ctxTags" class="ctx-input" placeholder="tag, tag\u2026" value="${esc(tags)}" spellcheck="false" autocomplete="off" />`
+      + `<div class="ctx-tags" id="ctxCurTags"></div>`
       + (curAi.length?`<div class="ctx-head" style="padding-top:6px">AI tags \u2014 click to remove</div><div class="ctx-tags">${curAi.map(t=>`<button type="button" class="ctx-tag on ai" data-ai="${esc(t)}">\u2726 ${esc(t)}</button>`).join("")}</div>`:"")
       + `<div class="ctx-row"><button class="ctx-btn primary" id="ctxCollDone">Done</button></div>`;
+    // current tags as chips with click-to-remove, mirroring the input live
+    const syncCur=()=>{ const el=$("ctxCurTags"); if(!el) return; const list=$("ctxTags").value.split(",").map(x=>x.trim()).filter(Boolean);
+      el.innerHTML=list.map(t=>`<button type="button" class="ctx-tag on" data-cur="${esc(t)}" title="Remove tag">${esc(t)} \u2715</button>`).join("");
+      el.querySelectorAll("[data-cur]").forEach(b=>b.onclick=()=>{ const v=$("ctxTags").value.split(",").map(x=>x.trim()).filter(Boolean).filter(x=>x!==b.dataset.cur); $("ctxTags").value=v.join(", "); syncCur(); }); };
     ctx.querySelectorAll("input[data-cid]").forEach(cb=>cb.onchange=()=>{ toggleInCollection(cb.dataset.cid,key); buildCollSel(); });
     $("ctxNewCollAdd").onclick=()=>{ const n=$("ctxNewColl").value.trim(); if(n){ const id=newCollection(n); toggleInCollection(id,key); buildCollSel(); showCollectionEditor(rec,x,y); } };
     const done=()=>{ const t=$("ctxTags").value.split(",").map(x=>x.trim()).filter(Boolean); if(t.length) songTags.set(key,t); else songTags.delete(key);
       const low=new Set(t.map(x=>x.toLowerCase()));
       const keptAi=(aiTags.get(key)||[]).filter(x=>!low.has(x.toLowerCase()));
       if(keptAi.length) aiTags.set(key,keptAi); else aiTags.delete(key);
-      saveTags(); saveAiTags(); hideCtx(); render(); };
-    $("ctxCollDone").onclick=done;
+      saveTags(); saveAiTags(); render(); };
+    ctx._onHide=done;   // clicking anywhere else commits, like the macOS tag editor
+    $("ctxCollDone").onclick=()=>hideCtx();
     $("ctxNewColl").addEventListener("keydown",e=>{ e.stopPropagation(); if(e.key==="Enter"){ e.preventDefault(); $("ctxNewCollAdd").click(); } });
-    $("ctxTags").addEventListener("keydown",e=>{ e.stopPropagation(); if(e.key==="Enter"){ e.preventDefault(); done(); } });
+    $("ctxTags").addEventListener("keydown",e=>{ e.stopPropagation(); if(e.key==="Enter"){ e.preventDefault(); hideCtx(); } });
+    $("ctxTags").addEventListener("input", syncCur);
+    syncCur();
     ctx.querySelectorAll("[data-ai]").forEach(b=>b.onclick=()=>{ const t=b.dataset.ai; const list=(aiTags.get(key)||[]).filter(x=>x!==t); if(list.length) aiTags.set(key,list); else aiTags.delete(key); saveAiTags(); render(); showCollectionEditor(rec,x,y); });
     ctx.style.display="block";
     ctx.style.left=Math.min(x,window.innerWidth-ctx.offsetWidth-8)+"px";
@@ -2012,7 +2023,7 @@
       + `<div class="dt-count">${files.length} version${files.length>1?"s":""}  ·  ${fmtSize(totSize)}  ·  drag any version out to Finder / your DAW</div>`
       + `<div class="dt-sec">Versions</div><div class="dt-vers">${vers}</div>`
       + `<div class="dt-sec">Collections</div><div class="dt-chips">${inColls.map(c=>`<span class="dt-chip">${esc(c.name)}</span>`).join("")||'<span class="dt-dim">None</span>'} <button class="dt-add" id="dtEditColl">edit…</button></div>`
-      + `<div class="dt-sec">Tags</div><div class="dt-chips">${tags.map(t=>`<span class="dt-chip tag">${esc(t)}</span>`).join("")}${ai.map(t=>`<span class="dt-chip tag ai">✦ ${esc(t)}</span>`).join("")}${(tags.length||ai.length)?"":'<span class="dt-dim">None</span>'} <button class="dt-add" id="dtEditTags">edit…</button></div>`
+      + `<div class="dt-sec">Tags</div><div class="dt-chips">${tags.map(t=>`<span class="dt-chip tag" data-rmtag="${esc(t)}">${esc(t)}<button class="chip-x" title="Remove tag" aria-label="Remove tag ${esc(t)}">✕</button></span>`).join("")}${ai.map(t=>`<span class="dt-chip tag ai" data-rmai="${esc(t)}">✦ ${esc(t)}<button class="chip-x" title="Remove tag" aria-label="Remove tag ${esc(t)}">✕</button></span>`).join("")}${(tags.length||ai.length)?"":'<span class="dt-dim">None</span>'} <button class="dt-add" id="dtEditTags">edit…</button></div>`
       + `<div class="dt-sec">Location</div><div class="dt-path" id="dtPath" title="Reveal in Finder">${esc(dir||"/")}</div>`;
     const body=$("dtBody");
     body.querySelectorAll(".dt-play").forEach(b=>b.onclick=()=>{ const f=files.find(x=>x.abs===b.dataset.abs); if(f) play(f); });
@@ -2021,6 +2032,8 @@
     body.querySelectorAll(".dt-ver").forEach(v=>v.addEventListener("dragstart",(e)=>{ if(DEMO){ e.preventDefault(); return; } const f=files.find(x=>x.abs===v.dataset.abs); if(f){ e.dataTransfer.setData("DownloadURL", dlUrl(f)); e.dataTransfer.effectAllowed="copy"; } }));
     const ec=$("dtEditColl"); if(ec) ec.onclick=(e)=>{ e.stopPropagation(); showCollectionPicker(head, anchorPos(e.currentTarget)); };
     const et=$("dtEditTags"); if(et) et.onclick=(e)=>{ e.stopPropagation(); showTagPicker(head, anchorPos(e.currentTarget)); };
+    body.querySelectorAll("[data-rmtag] .chip-x").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); const t=b.parentElement.dataset.rmtag; const list=(songTags.get(key)||[]).filter(x=>x!==t); if(list.length) songTags.set(key,list); else songTags.delete(key); saveTags(); render(); openDetail(rec); });
+    body.querySelectorAll("[data-rmai] .chip-x").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); const t=b.parentElement.dataset.rmai; const list=(aiTags.get(key)||[]).filter(x=>x!==t); if(list.length) aiTags.set(key,list); else aiTags.delete(key); saveAiTags(); render(); openDetail(rec); });
     const dp=$("dtPath"); if(dp) dp.onclick=()=>reveal(head);
     $("detail").classList.add("show");
   }
