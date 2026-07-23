@@ -1547,7 +1547,7 @@
     let j={}; try{ j=await r.json(); }catch(e){}
     if(r.ok && j.tags){
       const list=[...(j.tags.genres||[]),...(j.tags.moods||[])];
-      if(list.length){ aiTags.set(key,list); saveAiTags(); }
+      if(list.length){ aiTags.set(key,list); saveAiTags(); _syncState(); }   // sync to disk now: tags must survive a force-quit
       return {kind:"ok"};
     }
     return {kind:j.kind||"provider_error"};
@@ -1564,20 +1564,23 @@
     if(!localStorage.getItem("bf_gemini_key")){ tagStatus("Add a Gemini API key above first."); return; }
     const keys=allGroups().map(g=>g.key).filter(k=>!(aiTags.get(k)||[]).length && !sessionSkip.has(k));
     if(!keys.length){ tagStatus("Every song already has AI tags."); return; }
-    batchRun={cancel:false,done:0,total:keys.length,failed:0,skipped:0};
+    batchRun={cancel:false,done:0,total:keys.length,failed:0,skipped:0,rl:false};
     updateBatchBtn();
     const worker=async()=>{ while(keys.length && !batchRun.cancel){
       const k=keys.shift();
       let res=await autotagKey(k), tries=0;
-      while(res.kind==="rate_limited" && !batchRun.cancel && tries++<4){
+      while(res.kind==="rate_limited" && !batchRun.cancel && tries++<2){
         for(let s=30;s>0 && !batchRun.cancel;s--){ tagStatus(`Rate limited — resuming in ${s}s… (${batchRun.done}/${batchRun.total})`); await sleep(1000); }
         if(!batchRun.cancel) res=await autotagKey(k);
       }
+      // Still rate-limited after backoff: the quota is gone (burst or daily cap) —
+      // stop cleanly instead of grinding every remaining song into "failed".
+      if(res.kind==="rate_limited"){ keys.unshift(k); batchRun.rl=true; batchRun.cancel=true; break; }
       if(res.kind==="decode_failed"||res.kind==="online"){ sessionSkip.add(k); batchRun.skipped++; }
       else if(res.kind==="no_key"){ batchRun.cancel=true; openSettings(); batchRun.failed++; }
       else if(res.kind!=="ok") batchRun.failed++;
       batchRun.done++;
-      tagStatus(`Auto-tagging ${batchRun.done}/${batchRun.total}…`);
+      tagStatus(`Auto-tagging ${batchRun.done}/${batchRun.total} — ${batchRun.done-batchRun.failed-batchRun.skipped} tagged…`);
       if(batchRun.done%10===0) render();
     }};
     try{ const rs=await Promise.allSettled([worker(),worker()]);
@@ -1588,7 +1591,10 @@
         const bits=[`${done.done-done.failed-done.skipped} tagged`];
         if(done.skipped) bits.push(`${done.skipped} skipped (couldn’t read audio)`);
         if(done.failed) bits.push(`${done.failed} failed`);
-        tagStatus(done.cancel?`Auto-tagging stopped (${done.done} of ${done.total} processed).`:`Auto-tagging finished: ${bits.join(", ")}.`);
+        const tagged=done.done-done.failed-done.skipped;
+        tagStatus(done.rl?`Gemini rate limit reached — ${tagged} tagged this run. Run “Tag library with AI” again later; songs with ✦ tags are skipped.`
+          :done.cancel?`Auto-tagging stopped (${done.done} of ${done.total} processed).`
+          :`Auto-tagging finished: ${bits.join(", ")}.`);
       }
     }
   }
