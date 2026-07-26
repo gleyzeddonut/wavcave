@@ -26,7 +26,9 @@ private let DEFAULT_KEYWORDS = [FolderKeyword(word: "bounce", caseSensitive: fal
 
 // MARK: - AI auto-tagging (Gemini)
 
-let GEMINI_MODEL = "gemini-2.5-flash"
+// Rolling alias: always points at Google's current Flash model. Pinned models
+// (e.g. gemini-2.5-flash) get retired for NEW api keys and then 404.
+let GEMINI_MODEL = "gemini-flash-latest"
 
 // Controlled taxonomy: the model must pick from these lists, and anything else
 // it replies with is dropped, so tag filters never fragment into variant spellings.
