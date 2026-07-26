@@ -533,10 +533,21 @@ final class WavCaveServer {
         guard let obj = (try? JSONSerialization.jsonObject(with: req.body)) as? [String: Any] else {
             return sendJSON(fd, ["error": "expected object"], code: 400)
         }
+        // MERGE into the existing state (null deletes a key) — never wholesale
+        // replace. A client can only affect keys it explicitly posts, so a stale
+        // or read-only session can no longer clobber newer data from another one.
+        var merged = [String: Any]()
+        if let cur = FileManager.default.contents(atPath: stateFile),
+           let curObj = (try? JSONSerialization.jsonObject(with: cur)) as? [String: Any] {
+            merged = curObj
+        }
+        for (k, v) in obj {
+            if v is NSNull { merged.removeValue(forKey: k) } else { merged[k] = v }
+        }
         do {
             try FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
             let tmp = stateFile + ".tmp"
-            let data = try JSONSerialization.data(withJSONObject: obj)
+            let data = try JSONSerialization.data(withJSONObject: merged)
             try data.write(to: URL(fileURLWithPath: tmp))
             _ = try FileManager.default.replaceItemAt(URL(fileURLWithPath: stateFile), withItemAt: URL(fileURLWithPath: tmp))
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stateFile)

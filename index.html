@@ -798,13 +798,25 @@
   /* durable settings: mirror bf_* localStorage to a disk file via the server, so
      filters / ignores / joins / stars / pins / artist edits / roots survive app
      updates and any localStorage reset. */
-  const _lsSet = Storage.prototype.setItem;   // unbound original
+  const _lsSet = Storage.prototype.setItem;      // unbound originals
+  const _lsRemove = Storage.prototype.removeItem;
   let _stateTimer = 0;
-  function _collectState(){ const st={}; try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.indexOf("bf_")===0) st[k]=localStorage.getItem(k); } }catch(e){} return st; }
-  function _syncState(){ try{ fetch(api("/api/state"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(_collectState())}).catch(()=>{}); }catch(e){} }
-  try{ Storage.prototype.setItem = function(k,v){ _lsSet.call(this,k,v); if(this===window.localStorage && typeof k==="string" && k.indexOf("bf_")===0){ clearTimeout(_stateTimer); _stateTimer=setTimeout(_syncState,400); } }; }catch(e){}
-  async function restoreState(){ try{ const st=await (await fetch(api("/api/state"),{cache:"no-store"})).json(); if(st && typeof st==="object"){ for(const k in st){ if(k.indexOf("bf_")===0 && typeof st[k]==="string" && localStorage.getItem(k)===null) _lsSet.call(localStorage, k, st[k]); } } }catch(e){} }
-  window.addEventListener("pagehide", ()=>{ try{ const b=new Blob([JSON.stringify(_collectState())],{type:"application/json"}); if(navigator.sendBeacon) navigator.sendBeacon(api("/api/state"), b); }catch(e){} });
+  // Only keys THIS session changed are ever synced, and the server merges them
+  // into state.json (null deletes). A read-only or stale session (a second
+  // window, a dev tab) can therefore never clobber another session's data.
+  const _dirty = new Set();
+  function _collectState(){ const st={}; try{ for(const k of _dirty) st[k]=localStorage.getItem(k); }catch(e){} return st; }
+  function _syncState(){ try{ if(!_dirty.size) return; fetch(api("/api/state"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(_collectState())}).catch(()=>{}); }catch(e){} }
+  const _markDirty=(k)=>{ _dirty.add(k); clearTimeout(_stateTimer); _stateTimer=setTimeout(_syncState,400); };
+  try{ Storage.prototype.setItem = function(k,v){ _lsSet.call(this,k,v); if(this===window.localStorage && typeof k==="string" && k.indexOf("bf_")===0) _markDirty(k); }; }catch(e){}
+  try{ Storage.prototype.removeItem = function(k){ _lsRemove.call(this,k); if(this===window.localStorage && typeof k==="string" && k.indexOf("bf_")===0) _markDirty(k); }; }catch(e){}
+  // At boot the disk copy is the authority: overwrite any stale local leftovers
+  // (only keys this session has already touched are kept).
+  async function restoreState(){ try{ const st=await (await fetch(api("/api/state"),{cache:"no-store"})).json(); if(st && typeof st==="object"){
+    for(const k in st){ if(k.indexOf("bf_")===0 && typeof st[k]==="string" && !_dirty.has(k)) _lsSet.call(localStorage, k, st[k]); }
+    for(let i=localStorage.length-1;i>=0;i--){ const k=localStorage.key(i); if(k && k.indexOf("bf_")===0 && !(k in st) && !_dirty.has(k)) _lsRemove.call(localStorage, k); }
+  } }catch(e){} }
+  window.addEventListener("pagehide", ()=>{ try{ if(!_dirty.size) return; const b=new Blob([JSON.stringify(_collectState())],{type:"application/json"}); if(navigator.sendBeacon) navigator.sendBeacon(api("/api/state"), b); }catch(e){} });
   const audio = $("audio");
 
   let DEMO = false;

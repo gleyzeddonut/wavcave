@@ -400,7 +400,21 @@ def test_cached_nonexistent_path_misses(srv):
 def test_state_roundtrip(srv):
     payload = {"bf_favs": "[\"song one\"]", "bf_settings": "{\"sort\":\"artist\"}"}
     assert srv.post_json("/api/state", payload) == {"ok": True}
-    assert srv.get_json("/api/state") == payload
+    got = srv.get_json("/api/state")
+    for k, v in payload.items():
+        assert got[k] == v
+
+
+def test_state_merges_and_deletes(srv):
+    # posts merge into the existing state instead of replacing it wholesale,
+    # so a client that only knows about some keys can't clobber the others
+    srv.post_json("/api/state", {"bf_m1": "a"})
+    srv.post_json("/api/state", {"bf_m2": "b"})
+    got = srv.get_json("/api/state")
+    assert got["bf_m1"] == "a" and got["bf_m2"] == "b"
+    srv.post_json("/api/state", {"bf_m1": None})   # null deletes the key
+    got = srv.get_json("/api/state")
+    assert "bf_m1" not in got and got["bf_m2"] == "b"
 
 
 def test_state_rejects_non_object(srv):
