@@ -758,6 +758,9 @@
     <p class="set-sub">Skip any file inside a folder whose name <em>contains</em> one of these tags (comma-separated) &mdash; so <code>stem</code> also catches <code>stems</code> and <code>GoodCryStems</code>. Applies instantly.</p>
     <input id="ignore" class="kw-word" style="width:100%;" spellcheck="false" autocapitalize="off" autocomplete="off" type="text" value="samples, processed, stem" />
     <p class="set-note">Tip: right-click any folder in the left sidebar to add it here.</p>
+    <div class="set-sec-title" style="margin-top:26px;">Ignored filename words</div>
+    <p class="set-sub">Skip any file whose <em>name</em> contains one of these words (comma-separated) as a whole word, ignoring case &mdash; so <code>inst</code> hides <code>Song INST.wav</code> and <code>Song_inst_v2.wav</code> but not <code>Instrumental</code> or <code>Winston</code>. Applies instantly.</p>
+    <input id="ignoreWords" class="kw-word" style="width:100%;" spellcheck="false" autocapitalize="off" autocomplete="off" type="text" value="" placeholder="inst, acapella, stems&hellip;" />
     <div class="set-sec-title" style="margin-top:26px;">Your library</div>
     <div class="stats" id="stats">
       <div class="stat"><div class="n" id="statSongs">0</div><div class="l">Songs</div></div>
@@ -903,13 +906,17 @@
   let cursorAbs = null;   // keyboard cursor: abs path of the focused library row
 
   let grouping = true, starredOnly = false, autoDl = false, sortMode = "name";
-  const saveSettings = () => { try { localStorage.setItem("bf_settings", JSON.stringify({ ignore:$("ignore").value, group:grouping, starred:starredOnly, autodl:autoDl, sort:sortMode })); } catch(e){} };
-  function loadSettings(){ try { const s=JSON.parse(localStorage.getItem("bf_settings")||"null"); if(s){ if(typeof s.ignore==="string") $("ignore").value=s.ignore; if(typeof s.autodl==="boolean") autoDl=s.autodl; if(typeof s.sort==="string") sortMode=s.sort; } } catch(e){} grouping=true; starredOnly=false; }
+  const saveSettings = () => { try { localStorage.setItem("bf_settings", JSON.stringify({ ignore:$("ignore").value, ignoreWords:$("ignoreWords").value, group:grouping, starred:starredOnly, autodl:autoDl, sort:sortMode })); } catch(e){} };
+  function loadSettings(){ try { const s=JSON.parse(localStorage.getItem("bf_settings")||"null"); if(s){ if(typeof s.ignore==="string") $("ignore").value=s.ignore; if(typeof s.ignoreWords==="string") $("ignoreWords").value=s.ignoreWords; if(typeof s.autodl==="boolean") autoDl=s.autodl; if(typeof s.sort==="string") sortMode=s.sort; } } catch(e){} grouping=true; starredOnly=false; }
 
   /* ---------- helpers ---------- */
   const segs = (p) => p.split("/");
   const ignoreTerms = () => $("ignore").value.split(",").map(t=>t.trim().toLowerCase()).filter(Boolean);
   const isIgnored = (p,terms) => { if(!terms.length) return false; const s=segs(p); for(let i=0;i<s.length-1;i++){ const seg=s[i].toLowerCase(); for(const t of terms) if(seg.includes(t)) return true; } return false; };
+  // filename-word ignores: whole-word, case-insensitive, same boundary rule as the INST/VOX
+  // detector in metaOf — "inst" hides "Song INST.wav" / "Song_inst_v2.wav" but not "Instrumental"
+  const ignoreWordRe = () => { const ws=$("ignoreWords").value.split(",").map(t=>t.trim()).filter(Boolean); if(!ws.length) return null; const alt=ws.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|"); return new RegExp("(^|[^a-z0-9])(?:"+alt+")([^a-z0-9]|$)","i"); };
+  const isIgnoredName = (name,re) => !!re && re.test(name.replace(/\.[^.]+$/,""));
   const fmtSize = (b) => { if(b==null) return "\u2014"; const u=["B","KB","MB","GB","TB"]; let i=0,n=b; while(n>=1024&&i<u.length-1){n/=1024;i++;} return (i===0?n:n.toFixed(n<10?1:0))+" "+u[i]; };
   const fmtDate = (ms) => ms ? new Date(ms).toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"}) : "\u2014";
   const fmtTime = (s) => { if(!isFinite(s)||s<0) s=0; const m=Math.floor(s/60), ss=Math.floor(s%60); return m+":"+String(ss).padStart(2,"0"); };
@@ -1149,8 +1156,8 @@
     bar.querySelectorAll("button.x").forEach(b=>b.addEventListener("click",()=>removeRoot(roots[+b.dataset.i])));
   }
   function applyFilters(){
-    const terms=ignoreTerms();
-    const hide=(f)=>fileIgnores.has(f.abs)||isIgnored(f.path,terms)||inIgnoredFolder(f.abs);
+    const terms=ignoreTerms(), wordRe=ignoreWordRe();
+    const hide=(f)=>fileIgnores.has(f.abs)||isIgnored(f.path,terms)||isIgnoredName(f.name,wordRe)||inIgnoredFolder(f.abs);
     allFiles=rawMatches.filter(f=>!hide(f));
     render();
   }
@@ -1826,6 +1833,7 @@
   let _searchT; $("search").addEventListener("input", ()=>{ clearTimeout(_searchT); _searchT=setTimeout(render, 180); });
   let _ignoreT=0;
   $("ignore").addEventListener("input", ()=>{ saveSettings(); clearTimeout(_ignoreT); _ignoreT=setTimeout(applyFilters,180); });   // debounce so a 9k-file library isn't re-filtered on every keystroke
+  $("ignoreWords").addEventListener("input", ()=>{ saveSettings(); clearTimeout(_ignoreT); _ignoreT=setTimeout(applyFilters,180); });
   $("expandBtn").addEventListener("click", ()=>{
     const groups=allGroups().filter(g=>g.versions.length);
     const allOpen=groups.length && groups.every(g=>expanded.has(g.key));
