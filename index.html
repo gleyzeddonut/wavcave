@@ -814,8 +814,12 @@
   try{ Storage.prototype.setItem = function(k,v){ _lsSet.call(this,k,v); if(this===window.localStorage && typeof k==="string" && k.indexOf("bf_")===0) _markDirty(k); }; }catch(e){}
   try{ Storage.prototype.removeItem = function(k){ _lsRemove.call(this,k); if(this===window.localStorage && typeof k==="string" && k.indexOf("bf_")===0) _markDirty(k); }; }catch(e){}
   // At boot the disk copy is the authority: overwrite any stale local leftovers
-  // (only keys this session has already touched are kept).
+  // (only keys this session has already touched are kept). If nothing is on
+  // disk yet (first launch with existing localStorage, or state.json removed),
+  // the local copy is the only copy: mark it dirty so boot's _syncState()
+  // migrates it to disk instead of wiping it.
   async function restoreState(){ try{ const st=await (await fetch(api("/api/state"),{cache:"no-store"})).json(); if(st && typeof st==="object"){
+    if(!Object.keys(st).some(k=>k.indexOf("bf_")===0)){ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.indexOf("bf_")===0) _dirty.add(k); } return; }
     for(const k in st){ if(k.indexOf("bf_")===0 && typeof st[k]==="string" && !_dirty.has(k)) _lsSet.call(localStorage, k, st[k]); }
     for(let i=localStorage.length-1;i>=0;i--){ const k=localStorage.key(i); if(k && k.indexOf("bf_")===0 && !(k in st) && !_dirty.has(k)) _lsRemove.call(localStorage, k); }
   } }catch(e){} }
@@ -1606,7 +1610,7 @@
       // Still rate-limited after backoff: the quota is gone (burst or daily cap) —
       // stop cleanly instead of grinding every remaining song into "failed".
       if(res.kind==="rate_limited"){ keys.unshift(k); batchRun.rl=true; batchRun.cancel=true; break; }
-      if(res.kind==="decode_failed"||res.kind==="online"){ sessionSkip.add(k); batchRun.skipped++; }
+      if(res.kind==="decode_failed"||res.kind==="online"||res.kind==="skipped"){ sessionSkip.add(k); batchRun.skipped++; }   // "skipped": no main version to clip
       else if(res.kind==="no_key"){ batchRun.cancel=true; openSettings(); batchRun.failed++; }
       else if(res.kind!=="ok") batchRun.failed++;
       batchRun.done++;
@@ -1619,7 +1623,7 @@
       const done=batchRun; batchRun=null; updateBatchBtn(); render();
       if(done){
         const bits=[`${done.done-done.failed-done.skipped} tagged`];
-        if(done.skipped) bits.push(`${done.skipped} skipped (couldn’t read audio)`);
+        if(done.skipped) bits.push(`${done.skipped} skipped (no readable audio)`);
         if(done.failed) bits.push(`${done.failed} failed`);
         const tagged=done.done-done.failed-done.skipped;
         tagStatus(done.rl?`Gemini rate limit reached — ${tagged} tagged this run. Run “Tag library with AI” again later; songs with ✦ tags are skipped.`
@@ -2268,7 +2272,7 @@
     }
     await restoreState();   // pull durable state from disk into localStorage before reading it
     loadSettings(); loadFavs(); loadFolderIgnores(); loadFileIgnores(); loadMerges(); loadPinned(); loadOpenArtists(); loadArtistOverride(); loadTitleOverride(); loadCollections(); loadTags(); loadAiTags(); loadHistory(); loadKeywords();
-    _syncState();           // make sure the disk copy reflects current settings (first-run migration)
+    _syncState();           // pushes whatever restoreState marked for migration (no-op when disk already had state)
     try{ roots=JSON.parse(localStorage.getItem("bf_roots")||"null")||[]; }catch(e){ roots=[]; }
     if (!roots.length){ try{ const old=localStorage.getItem("bf_root"); if(old) roots=[old]; }catch(e){} }
     renderRootsBar();
