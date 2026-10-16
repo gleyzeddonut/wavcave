@@ -140,6 +140,7 @@
   .mchip.inst{ color:#0a84ff; background:rgba(10,132,255,.1); border-color:rgba(10,132,255,.22); }
   .mchip.vocal{ color:#b06b00; background:rgba(224,146,47,.12); border-color:rgba(224,146,47,.26); }
   .sortsel{ display:inline-flex; align-items:center; gap:6px; }
+  .toolcount{ margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--ink-2); white-space:nowrap; }
   .sortsel .sl{ font-family:var(--sans); font-size:12.5px; font-weight:600; color:var(--ink-3); }
   .sortsel select{
     -webkit-appearance:none; appearance:none;
@@ -658,6 +659,7 @@
       <button class="btn ghost" id="expandBtn">Expand all</button>
       <label class="sortsel"><span class="sl">Show</span><select id="collSel"><option value="">All songs</option></select></label>
       <label class="sortsel"><span class="sl">Sort</span><select id="sortSel"><option value="name">Name</option><option value="artist">Artist</option><option value="context">Context</option><option value="recent">Recent</option></select></label>
+      <span class="toolcount" id="songCount" title="Songs in the list below (versions not counted)"></span>
     </div>
     <div class="cloudbar" id="cloudBar"></div>
     <div class="selbar" id="selBar"></div>
@@ -847,7 +849,16 @@
 
   const mergeMap = new Map();
   const find = (k) => { let n=0; while (mergeMap.has(k) && n++<1000) k=mergeMap.get(k); return k; };
-  const groupKey = (name) => find(songKey(name));
+  // Same-named files in different folders are usually versions of one song — but
+  // not always. "Separate" marks a (song name, folder) pair as its own song: every
+  // same-named file in that folder groups together, apart from the rest.
+  const splitKeys = new Set();   // songKey + SPLIT_SEP + folder
+  const SPLIT_SEP = "\u0001";
+  const dirOf = (abs) => abs.slice(0, abs.lastIndexOf("/"));
+  const splitKeyOf = (f) => songKey(f.name) + SPLIT_SEP + dirOf(f.abs);
+  const loadSplit = () => { try { const a = JSON.parse(localStorage.getItem("bf_split")||"[]"); if (Array.isArray(a)) a.forEach(k=>splitKeys.add(k)); } catch(e){} };
+  const saveSplit = () => { invalidateGroups(); try { localStorage.setItem("bf_split", JSON.stringify([...splitKeys])); } catch(e){} };
+  const groupKey = (f) => { if (splitKeys.size){ const sk=splitKeyOf(f); if (splitKeys.has(sk)) return find(sk); } return find(songKey(f.name)); };
   const loadMerges = () => { try { const a = JSON.parse(localStorage.getItem("bf_merges")||"[]"); if (Array.isArray(a)) a.forEach(([c,p])=>mergeMap.set(c,p)); } catch(e){} };
   const saveMerges = () => { invalidateGroups(); try { localStorage.setItem("bf_merges", JSON.stringify([...mergeMap.entries()])); } catch(e){} };
   const pinnedHeads = new Map();   // groupKey -> abs path of the version chosen as the main one
@@ -860,7 +871,7 @@
   const titleOverride = new Map();   // groupKey -> custom display title (overrides the filename-derived title)
   const loadTitleOverride = () => { try{ const a=JSON.parse(localStorage.getItem("bf_titlemap")||"[]"); if(Array.isArray(a)) a.forEach(([k,v])=>titleOverride.set(k,v)); }catch(e){} };
   const saveTitleOverride = () => { try{ localStorage.setItem("bf_titlemap", JSON.stringify([...titleOverride.entries()])); }catch(e){} };
-  const songTitle = (f) => titleOverride.get(groupKey(f.name)) || titleCase(songKeyDisplay(f.name));
+  const songTitle = (f) => titleOverride.get(groupKey(f)) || titleCase(songKeyDisplay(f.name));
   let collections = [];   // [{id,name,keys:[songKey]}]
   let activeCollection = null;
   const loadCollections = () => { try{ const a=JSON.parse(localStorage.getItem("bf_collections")||"[]"); if(Array.isArray(a)) collections=a; }catch(e){} };
@@ -954,7 +965,7 @@
   }
   const artistOf=(f)=>_placeOf(f)._artist;
   const contextOf=(f)=>_placeOf(f)._context;
-  const artistLabel=(f)=>{ const o=artistOverride.get(groupKey(f.name)); return (o&&o.length)?o:(artistOf(f)||"Unknown artist"); };
+  const artistLabel=(f)=>{ const o=artistOverride.get(groupKey(f)); return (o&&o.length)?o:(artistOf(f)||"Unknown artist"); };
   const contextLabel=(f)=>contextOf(f)||"Uncategorized";
   // metadata parsed from the filename you already use: BPM (130bpm / _153) and type (inst / vox)
   const _metaCache=new Map();
@@ -972,7 +983,7 @@
     if (tok.artist)  out=out.filter(f=>artistLabel(f).toLowerCase().includes(tok.artist));
     if (tok.type)    out=out.filter(f=>{ const t=metaOf(f).type; return tok.type[0]==="i"?t==="inst":(tok.type[0]==="v"?t==="vocal":true); });
     if (tok.bpm){ const r=tok.bpm.match(/^(\d+)(?:-(\d+))?$/); if(r){ const lo=+r[1], hi=r[2]?+r[2]:lo, tol=r[2]?0:3; out=out.filter(f=>{ const b=metaOf(f).bpm; return b!=null && b>=lo-tol && b<=hi+tol; }); } }
-    if (tok.tag) out=out.filter(f=>{ const t=tagsOf(groupKey(f.name)); return t.some(x=>x.toLowerCase().includes(tok.tag)); });
+    if (tok.tag) out=out.filter(f=>{ const t=tagsOf(groupKey(f)); return t.some(x=>x.toLowerCase().includes(tok.tag)); });
     return out;
   }
   const sectioned = ()=> sortMode==="artist"||sortMode==="context";
@@ -1010,7 +1021,7 @@
   function titleCase(s){ return s.replace(/\w\S*/g, t=>t.charAt(0).toUpperCase()+t.slice(1)); }
   function groupsOf(list){
     const map=new Map();
-    for (const f of list){ const k=groupKey(f.name); if(!map.has(k)) map.set(k,[]); map.get(k).push(f); }
+    for (const f of list){ const k=groupKey(f); if(!map.has(k)) map.set(k,[]); map.get(k).push(f); }
     const groups=[];
     for (const [key,files] of map){
       files.sort((a,b)=>(b.mtime||0)-(a.mtime||0));
@@ -1318,14 +1329,14 @@
     shown = allFiles.slice();
     if (pathFilter) shown = shown.filter(f=>f.path.startsWith(pathFilter+"/"));
     shown = applyTokens(shown,tok);
-    if (activeCollection){ const c=collById(activeCollection); const set=new Set(c?c.keys:[]); shown = shown.filter(f=>set.has(groupKey(f.name))); }
+    if (activeCollection){ const c=collById(activeCollection); const set=new Set(c?c.keys:[]); shown = shown.filter(f=>set.has(groupKey(f))); }
     if (q) shown = shown.filter(f=>f.path.toLowerCase().includes(q)||f.name.toLowerCase().includes(q));
 
     if (nav.kind==="context") shown=shown.filter(f=>contextLabel(f)===nav.value);
     else if (nav.kind==="artist") shown=shown.filter(f=>artistLabel(f)===nav.value && (!nav.ctx||contextLabel(f)===nav.ctx));
-    else if (nav.kind==="starred") shown=shown.filter(f=>favs.has(groupKey(f.name)));
+    else if (nav.kind==="starred") shown=shown.filter(f=>favs.has(groupKey(f)));
     else if (nav.kind==="recent"){ const hs=new Set(playHistory.map(h=>h.abs)); shown=shown.filter(f=>hs.has(f.abs)); }
-    else if (nav.kind==="tag"){ const tl=(nav.value||"").toLowerCase(); shown=shown.filter(f=>tagsOf(groupKey(f.name)).some(t=>t.toLowerCase()===tl)); }
+    else if (nav.kind==="tag"){ const tl=(nav.value||"").toLowerCase(); shown=shown.filter(f=>tagsOf(groupKey(f)).some(t=>t.toLowerCase()===tl)); }
 
     playOrder=[]; navOrder=[]; let html="", count=0; const cmp=cmpBy(sortMode); const artistCount={}; anyOnline=shown.some(f=>f.online);
     const artHdr=(a,cl)=>`<li class="artisthdr ${cl?"closed":""}" data-artist="${esc(a)}"><span class="sf sf-chev"></span><span class="ah-name">${esc(a)}</span><span class="ah-count">${artistCount[a]||0}</span></li>`;
@@ -1344,16 +1355,17 @@
       }
     } else {
       let flat=shown.slice().sort(cmp);
-      if (starredOnly) flat=flat.filter(f=>favs.has(groupKey(f.name)));
+      if (starredOnly) flat=flat.filter(f=>favs.has(groupKey(f)));
       if (sectioned()) for (const f of flat){ const a=sectionLabel(f); artistCount[a]=(artistCount[a]||0)+1; }
       count=flat.length; let lastArtist=null, skipArtist=false;
       for (const f of flat){
         if (sectioned()){ const a=sectionLabel(f); if(a!==lastArtist){ const cl=!openArtists.has(a); html+=artHdr(a,cl); lastArtist=a; skipArtist=cl; } }
         navOrder.push(f);
-        if(!skipArtist){ playOrder.push(f); html+=rowHtml(f,playOrder.length-1,0,true,true,groupKey(f.name),false); }
+        if(!skipArtist){ playOrder.push(f); html+=rowHtml(f,playOrder.length-1,0,true,true,groupKey(f),false); }
       }
     }
 
+    { const sc=$("songCount"); if(sc) sc.textContent = count ? count.toLocaleString()+(count===1?" song":" songs") : ""; }
     const list=$("list"), empty=$("empty");
     if (count===0){
       list.style.display="none"; empty.style.display="block";
@@ -1485,7 +1497,7 @@
     const u=$("undoRm"); if(u) u.onclick=(ev)=>{ ev.preventDefault(); fileIgnores.delete(rec.abs); saveFileIgnores(); applyFilters(); status("Restored \u201c"+rec.name+"\u201d."); };
   }
   function showCollectionEditor(rec,x,y){
-    const key=groupKey(rec.name);
+    const key=groupKey(rec);
     const checks=collections.map(c=>`<label class="ctx-check"><input type="checkbox" data-cid="${esc(c.id)}" ${c.keys.includes(key)?"checked":""}> ${esc(c.name)}<span class="ctx-sub" style="margin-left:auto">${c.keys.length}</span></label>`).join("");
     const tags=(songTags.get(key)||[]).join(", ");
     const curAi=aiTags.get(key)||[];
@@ -1529,7 +1541,7 @@
   function refreshDetailIfOpen(rec){ if($("detail").classList.contains("show")) openDetail(rec); }
   // Collections picker: checkbox per collection + create-new, saves instantly.
   function showCollectionPicker(rec, pos){
-    const key=groupKey(rec.name);
+    const key=groupKey(rec);
     const checks=collections.map(c=>`<label class="ctx-check"><input type="checkbox" data-cid="${esc(c.id)}" ${c.keys.includes(key)?"checked":""}> ${esc(c.name)}<span class="ctx-sub" style="margin-left:auto">${c.keys.length}</span></label>`).join("");
     ctx.innerHTML=`<div class="ctx-head">Add to collection</div>`
       + (checks||`<div class="ctx-sub" style="padding:2px 12px 6px">No collections yet \u2014 make one below.</div>`)
@@ -1542,7 +1554,7 @@
   // Tag picker: comma input + every known tag as a toggle chip.
   // Done or clicking away commits; Esc cancels.
   function showTagPicker(rec, pos){
-    const key=groupKey(rec.name);
+    const key=groupKey(rec);
     const cur=songTags.get(key)||[];
     const curAi=aiTags.get(key)||[];
     const all=new Set(); songTags.forEach(v=>v.forEach(t=>all.add(t)));
@@ -1645,12 +1657,18 @@
     html+=`<div class="ctx-item" data-act="reveal"><span class="ctx-line"><span class="sf sf-folder"></span>Reveal in Finder</span></div>`;
     if (rec.online) html+=`<div class="ctx-item" data-act="download"><span class="ctx-line"><span class="sf sf-cloud"></span>Download from cloud</span></div>`;
     html+=`<div class="ctx-sep"></div>`;
-    { const _ks=groupKey(rec.name); const _cn=collections.filter(c=>c.keys.includes(_ks)).map(c=>c.name); const _tg=tagsOf(_ks); const _sub=[..._cn,..._tg].slice(0,3).join(", ");
+    { const _ks=groupKey(rec); const _cn=collections.filter(c=>c.keys.includes(_ks)).map(c=>c.name); const _tg=tagsOf(_ks); const _sub=[..._cn,..._tg].slice(0,3).join(", ");
       html+=`<div class="ctx-item" data-act="collection"><span class="ctx-line"><span class="sf sf-folderplus"></span>Add to folder / tag…</span>${_sub?`<span class="ctx-sub">in: ${esc(_sub)}</span>`:""}</div>`; }
     html+=`<div class="ctx-item" data-act="setartist"><span class="ctx-line"><span class="sf sf-person"></span>Set artist…</span><span class="ctx-sub">now: ${esc(artistLabel(rec))}</span></div>`;
-    { const _atg=aiTags.get(groupKey(rec.name))||[];
+    { const _atg=aiTags.get(groupKey(rec))||[];
       html+=`<div class="ctx-item" data-act="autotag"><span class="ctx-line"><span class="sf sf-wave"></span>Auto-tag with AI</span>${_atg.length?`<span class="ctx-sub">✦ ${esc(_atg.slice(0,3).join(", "))}</span>`:""}</div>`; }
     html+=`<div class="ctx-sep"></div>`;
+    { // same-named files from another folder may not be the same song: offer to separate this folder's copies (or rejoin them)
+      const _sk=splitKeyOf(rec), _isSplit=splitKeys.has(_sk);
+      const _gk=groupKey(rec), _grp=allFiles.filter(f=>groupKey(f)===_gk), _folders=new Set(_grp.map(f=>dirOf(f.abs)));
+      const _fname=shortPath(dirOf(rec.abs));
+      if (_isSplit) html+=`<div class="ctx-item" data-act="rejoin"><span class="ctx-line"><span class="sf sf-merge"></span>Rejoin with other “${esc(songTitle(rec))}” files</span><span class="ctx-sub">kept separate from other folders</span></div>`;
+      else if (_folders.size>1) html+=`<div class="ctx-item" data-act="separate"><span class="ctx-line"><span class="sf sf-branch"></span>Not the same song — separate it</span><span class="ctx-sub">the copies in “${esc(_fname)}” become their own song</span></div>`; }
     html+=`<div class="ctx-item" data-act="removefile"><span class="ctx-line"><span class="sf sf-minus"></span>Remove from list</span><span class="ctx-sub">${esc(rec.name)}</span></div>`;
     if (opts.length){
       html+=`<div class="ctx-sep"></div><div class="ctx-head">Ignore a folder</div>`;
@@ -1661,18 +1679,24 @@
     ctx.querySelectorAll("[data-path]").forEach(el=>el.onclick=()=>{ folderIgnores.add(el.dataset.path); saveFolderIgnores(); hideCtx(); applyFilters(); status(`Ignoring folder \u201c${el.dataset.path.split("/").pop()}\u201d.`); });
     const dlEl=ctx.querySelector('[data-act=download]'); if(dlEl) dlEl.onclick=()=>{ hideCtx(); prefetch(rec); status("Downloading from the cloud\u2026"); };
     ctx.querySelector('[data-act=reveal]').onclick=()=>{ hideCtx(); reveal(rec); };
+    { const sepEl=ctx.querySelector('[data-act=separate]'); if(sepEl) sepEl.onclick=()=>{ hideCtx(); const title=songTitle(rec), folder=shortPath(dirOf(rec.abs));
+        splitKeys.add(splitKeyOf(rec)); saveSplit(); render();
+        status(`“${title}” in “${folder}” is now its own song — stars and tags stay with the original. Right-click it to rejoin.`); };
+      const rjEl=ctx.querySelector('[data-act=rejoin]'); if(rjEl) rjEl.onclick=()=>{ hideCtx(); const title=songTitle(rec);
+        splitKeys.delete(splitKeyOf(rec)); saveSplit(); render();
+        status(`Rejoined “${title}” with the other files of that name.`); }; }
     ctx.querySelector('[data-act=setartist]').onclick=()=>showArtistEditor(rec,x,y);
     ctx.querySelector('[data-act=autotag]').onclick=async()=>{ hideCtx();
       if(DEMO){ status("Auto-tagging isn’t available in the demo."); return; }
       if(!localStorage.getItem("bf_gemini_key")){ openSettings(); status("Add a Gemini API key in Settings to use AI auto-tagging."); return; }
       status("Listening to “"+songTitle(rec)+"”…");
-      const res=await autotagKey(groupKey(rec.name));
+      const res=await autotagKey(groupKey(rec));
       if(res.kind==="ok"){ render(); refreshDetailIfOpen(rec); status("Tagged “"+songTitle(rec)+"”."); }
       else if(res.kind==="no_key"){ openSettings(); status("Add a Gemini API key in Settings to use AI auto-tagging."); }
       else status("Auto-tag failed: "+autotagErrMsg(res.kind)+".");
     };
     ctx.querySelector('[data-act=removefile]').onclick=()=>{ hideCtx();
-      const _k=groupKey(rec.name); const stack=allFiles.filter(f=>groupKey(f.name)===_k);
+      const _k=groupKey(rec); const stack=allFiles.filter(f=>groupKey(f)===_k);
       if(stack.length>1){ confirmDialog({ title:"Remove this song?", message:"This song has <b>"+stack.length+"</b> versions folded together. Remove the whole stack, or just this one file?", actions:[ {label:"Remove all "+stack.length+" versions", cls:"danger", onClick:()=>removeStack(stack)}, {label:"Remove just this file", onClick:()=>removeFile(rec)}, {label:"Cancel", cls:"ghost"} ] }); }
       else removeFile(rec);
     };
@@ -1684,7 +1708,7 @@
     ctx.style.top=Math.min(y, window.innerHeight-ctx.offsetHeight-8)+"px";
   }
   function showRenameEditor(rec,x,y){
-    const key=groupKey(rec.name), cur=songTitle(rec), overridden=titleOverride.has(key);
+    const key=groupKey(rec), cur=songTitle(rec), overridden=titleOverride.has(key);
     ctx.innerHTML=`<div class="ctx-head">Rename this song</div>`
       + `<input id="ctxRename" class="ctx-input" type="text" value="${esc(cur)}" placeholder="Song name" spellcheck="false" autocomplete="off" />`
       + `<div class="ctx-row"><button class="ctx-btn primary" id="ctxRenameSave">Save</button>`
@@ -1702,7 +1726,7 @@
     setTimeout(()=>{ inp.focus(); inp.select(); },0);
   }
   function showArtistEditor(rec,x,y){
-    const key=groupKey(rec.name), cur=artistLabel(rec), overridden=artistOverride.has(key);
+    const key=groupKey(rec), cur=artistLabel(rec), overridden=artistOverride.has(key);
     ctx.innerHTML=`<div class="ctx-head">Artist for this song</div>`
       + `<input id="ctxArtist" class="ctx-input" type="text" value="${esc(cur)}" placeholder="Artist name" spellcheck="false" autocomplete="off" />`
       + `<div class="ctx-row"><button class="ctx-btn primary" id="ctxArtistSave">Save</button>`
@@ -2023,8 +2047,8 @@
   function dlUrl(f){ return "application/octet-stream:"+f.name+":"+location.origin+api("/api/file?path="+encodeURIComponent(f.abs)); }
   function openDetail(rec){
     if(!rec) return;
-    const key=groupKey(rec.name);
-    let files=allFiles.filter(f=>groupKey(f.name)===key).sort((a,b)=>(b.mtime||0)-(a.mtime||0));
+    const key=groupKey(rec);
+    let files=allFiles.filter(f=>groupKey(f)===key).sort((a,b)=>(b.mtime||0)-(a.mtime||0));
     if(!files.length) files=[rec];
     const pin=pinnedHeads.get(key); if(pin){ const i=files.findIndex(f=>f.abs===pin); if(i>0){ const pf=files.splice(i,1)[0]; files.unshift(pf); } }
     const head=files[0];
@@ -2072,7 +2096,7 @@
   let playHistory=[];
   const loadHistory=()=>{ try{ const a=JSON.parse(localStorage.getItem("bf_history")||"[]"); if(Array.isArray(a)) playHistory=a; }catch(e){} };
   const saveHistory=()=>{ try{ localStorage.setItem("bf_history", JSON.stringify(playHistory.slice(0,80))); }catch(e){} };
-  function recordPlay(rec){ if(!rec||DEMO) return; const abs=rec.abs; playHistory=playHistory.filter(h=>h.abs!==abs); playHistory.unshift({abs:abs,name:rec.name,key:groupKey(rec.name),t:Date.now()}); if(playHistory.length>80) playHistory.length=80; saveHistory(); }
+  function recordPlay(rec){ if(!rec||DEMO) return; const abs=rec.abs; playHistory=playHistory.filter(h=>h.abs!==abs); playHistory.unshift({abs:abs,name:rec.name,key:groupKey(rec),t:Date.now()}); if(playHistory.length>80) playHistory.length=80; saveHistory(); }
 
   function sbItem(active,icon,label,count,attrs){ return `<button type="button" class="sb-item${active?" active":""}" ${attrs}><span class="sf ${icon}"></span><span class="sb-lbl">${esc(label)}</span>${count!=null?`<span class="sb-ct">${count}</span>`:""}</button>`; }
   function renderSidebar(){
@@ -2080,7 +2104,7 @@
     if(!allFiles.length){ body.innerHTML=""; return; }
     const groups=allGroups();
     const histAbs=new Set(playHistory.map(h=>h.abs));
-    const recentCount=new Set(allFiles.filter(f=>histAbs.has(f.abs)).map(f=>groupKey(f.name))).size;
+    const recentCount=new Set(allFiles.filter(f=>histAbs.has(f.abs)).map(f=>groupKey(f))).size;
     const starCount=groups.filter(g=>favs.has(g.key)).length;
     let h="";
     h+=`<div class="sb-sec">Library</div>`;
@@ -2265,13 +2289,13 @@
     sizeWave();
     const ok=await ping();
     if (!ok){
-      loadSettings(); loadFavs(); loadFolderIgnores(); loadFileIgnores(); loadMerges(); loadPinned(); loadOpenArtists(); loadArtistOverride(); loadTitleOverride(); loadCollections(); loadTags(); loadAiTags(); loadHistory(); loadKeywords();
+      loadSettings(); loadFavs(); loadFolderIgnores(); loadFileIgnores(); loadMerges(); loadSplit(); loadPinned(); loadOpenArtists(); loadArtistOverride(); loadTitleOverride(); loadCollections(); loadTags(); loadAiTags(); loadHistory(); loadKeywords();
       DEMO=true; status(""); finish(demoData());
       $("pathchip").style.display="flex"; $("pathtext").textContent="demo library \u2014 run the app to scan your own"; $("pathchip").querySelector(".dot").style.background="var(--amber)";
       return;
     }
     await restoreState();   // pull durable state from disk into localStorage before reading it
-    loadSettings(); loadFavs(); loadFolderIgnores(); loadFileIgnores(); loadMerges(); loadPinned(); loadOpenArtists(); loadArtistOverride(); loadTitleOverride(); loadCollections(); loadTags(); loadAiTags(); loadHistory(); loadKeywords();
+    loadSettings(); loadFavs(); loadFolderIgnores(); loadFileIgnores(); loadMerges(); loadSplit(); loadPinned(); loadOpenArtists(); loadArtistOverride(); loadTitleOverride(); loadCollections(); loadTags(); loadAiTags(); loadHistory(); loadKeywords();
     _syncState();           // pushes whatever restoreState marked for migration (no-op when disk already had state)
     try{ roots=JSON.parse(localStorage.getItem("bf_roots")||"null")||[]; }catch(e){ roots=[]; }
     if (!roots.length){ try{ const old=localStorage.getItem("bf_root"); if(old) roots=[old]; }catch(e){} }
